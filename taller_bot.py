@@ -5,17 +5,13 @@ taller_bot
 Now let's choose a username for your bot. It must end in `bot`. Like this, for example: TetrisBot or tetris_bot.
 Tallers_bot
 
-Use this token to access the HTTP API:
-5945616553:AAFU_h6Kg3JuHOx-Chppj1tD8JF1s932N5Q
-Keep your token secure and store it safely, it can be used by anyone to control your bot.
-
 t.me/Tallers_bot
 """
-
+import tb_settings
 import telebot
 # import requests
 
-TOKEN = "5945616553:AAFU_h6Kg3JuHOx-Chppj1tD8JF1s932N5Q"
+TOKEN = tb_settings.TB_TOKEN
 
 bot = telebot.TeleBot(TOKEN)
 
