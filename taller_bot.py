@@ -8,53 +8,181 @@ Tallers_bot
 t.me/Tallers_bot
 """
 import tb_settings
+import tb_dict_currency
 import telebot
-# import requests
+import requests
+import json
+import lxml
+import lxml.html
+from lxml import etree
+import currencyapicom
+client = currencyapicom.Client(tb_settings.CR_TOKEN)
 
-TOKEN = tb_settings.TB_TOKEN
 
-bot = telebot.TeleBot(TOKEN)
+print("Телеграмм бот по обмену валют запущен.")
+
+# result = client.currencies(currencies=['EUR', 'RUB'])
+# print(result)
+
+# result = client.currencies()
+# print(result)
+
+# print(tb_settings.CR_REQUEST_CR_LATE)
+# print(tb_settings.CR_REQUEST_CR_LIST)
+
+# r = requests.get(tb_settings.CR_REQUEST_CR_LATE)  # запрашиваем текущие курсы всех валют
+# print(r.content)
+# print(r.status_code)  # узнаем статус полученного ответа
+# curr = json.loads(r.content)  # делаем из полученных байтов Python-объект для удобной работы
+
+# curr = tb_dict_currency.curr
+#
+# data = curr['data']
+# print()
+# dl = 0
+# curr_info_request = ''
+# sd = ''
+# for keys in data.keys():
+#     dl += 1
+#     print(curr['data'][keys]['code'], curr['data'][keys]['value'])
+#     sd = keys
+#     if dl < len(data):
+#         sd += '%2C'
+#     curr_info_request += sd
+# print(curr_info_request)
+
+# currencies_list = tb_dict_currency.currencies_list
+#
+# data = currencies_list['data']
+# print('Список обслуживаемых валют.')
+# dl = 0
+# for keys in data.keys():
+#     dl += 1
+#     if currencies_list['data'][keys] is not None:
+#         print(currencies_list['data'][keys]['code'], '\t-',
+#               currencies_list['data'][keys]['name']
+#               )
+#
+#
+
+#
+# print(tb_settings.CR_REQUEST_CR_LATE + curr_info_request)
+# r = requests.get(tb_settings.CR_REQUEST_CR_LATE + curr_info_request)  # запрашиваем текущие курсы всех валют
+# print(r.content)
+# print(r.status_code)  # узнаем статус полученного ответа
+# val_list = json.loads(r.content)  # делаем из полученных байтов Python-объект для удобной работы
+#
+# print(val_list)
+
+# quit(0)
+
+bot = telebot.TeleBot(tb_settings.TB_TOKEN)
 
 # @bot.message_handler(filters)
 # def function_name(message):
 #     bot.reply_to(message, "This is a message handler")
 
 
+
+
 # Обрабатываются все сообщения, содержащие команды '/start' or '/help'.
 @bot.message_handler(commands=['start', 'help'])
 def handle_start_help(message):
-    print(type(message))
-    rawstr = ''
-    print('Пришел запрос:', message)
     name = str(message.chat.first_name)
+    if len(name) == 0:
+        name = str(message.chat.username)
+        if len(name) == 0:
+            name = "путник"
+    print('Пришел запрос от:', name, message.text)
+    
     bot.send_message(message.chat.id, 'Привет тебе, ' + name + ', забредший сюда.')
-
-
-@bot.message_handler(commands=['temp'])
-def handle_start_help(message):
-    # print(type(message))
+    bot.send_message(message.chat.id, tb_settings.H_TEXT)
+    
+    
+# Обрабатывается запрос конвертации валют
+@bot.message_handler(commands=['e', 'ex', 'exch', 'exchange'])
+def handle_exchange(message):
     name = str(message.chat.first_name)
-    print('Пришел запрос температуры от ', name)
-    bot.send_message(message.chat.id, 'Температуру пока не показываем.')
-    data_str = b'$KE,TMP\r\n'
-    if len(data_str) > 0:
-        for i in range(0, len(data_str)):
-            s = data_str[i]
-            print(hex(s), '\t', chr(s))
-    # r = requests.post('http://192.168.10.101:2424', timeout=(2, 5), data=b'$KE,TMP\r\n')
-    # print(r)
+    if len(name) == 0:
+        name = str(message.chat.username)
+        if len(name) == 0:
+            name = "путник"
+    cmd_ln = message.text.split()
+    print('Прилетел запрос=', name, cmd_ln)
+    if len(cmd_ln) == 4:
+        try:
+            val1 = currencies_list['data'][str(cmd_ln[1].upper())]  # ['code']
+            val2 = currencies_list['data'][str(cmd_ln[2].upper())]  # ['code']
+            amount = float(str(cmd_ln[3]))
+        except KeyError:
+            bot.send_message(message.chat.id, str('Код валюты введен с ошибкой!\n\n' + tb_settings.H_TEXT))
+            return
+        except ValueError:
+            bot.send_message(message.chat.id, str('Число введено с ошибкой!\n\n' + tb_settings.H_TEXT))
+            return
+        
+        dec_v1 = '%.' + str(val1['decimal_digits']) + 'f'
+        dec_v1 = dec_v1 % amount
+        sl = [val1['code'], val2['code'], dec_v1]
+        print(sl)
+        print(val1)
+        print(val2)
+        s = ' '.join(sl)
+        print(s)
+        
+        result = 1.2345
+        
+        dec_v2 = '%.' + str(val2['decimal_digits']) + 'f'
+        dec_v2 = dec_v2 % result
+        # str(f'={amount:.2f}')
+        bot.send_message(message.chat.id, str(val1['code'] + '=' + dec_v1 + ' -> ' + val2['code'] + '=' + dec_v2))
+    else:
+        bot.send_message(message.chat.id, str('Что Вы имели ввиду набрав:\n"' +
+                                              str(cmd_ln) + '"?\n\n' + tb_settings.H_TEXT))
+    
+    
+    
+
+# Обрабатывается запрос списка валют
+@bot.message_handler(commands=['v', 'val', 'value'])
+def handle_values(message):
+    texts = 'Список обслуживаемых валют.\n'
+    data = currencies_list['data']
+    print(texts)
+    dl = 0
+    s = ''
+    for keys in data.keys():
+        dl += 1
+        if currencies_list['data'][keys] is not None:
+            s = currencies_list['data'][keys]['code'] + '\t-' + currencies_list['data'][keys]['name']
+            print(s)
+            texts += s + '\n'
+    bot.send_message(message.chat.id, texts)
+
+@bot.message_handler(content_types=['photo', ])
+def say_lmao(message: telebot.types.Message):
+    bot.reply_to(message, 'Nice meme XDD')
 
 
-# Обрабатывается все документы и аудиозаписи
-@bot.message_handler(content_types=['document', 'audio'])
-def handle_docs_audio(message):
-    pass
+# не обслуженный входной поток
+@bot.message_handler(func=lambda message: True)
+def other_messages(message):
+    bot.send_message(message.chat.id, str('Что Вы имели ввиду набрав:\n"' + message.text + '"?'))
 
+
+
+currencies_list = tb_dict_currency.currencies_list
 
 bot.polling(none_stop=True)
 
 
+
 """
+'id': 864491376, 'first_name': 'Natasha'
+'id': 463882236, 'first_name': '.V.aSko.V.'
+'id': 275588773, 'first_name': 'Dmitry'
+'id': 224489387, 'first_name': 'Gidro', 'username': 'Gidro_Gidro', 'last_name': 'Gidro'
+
 {
 'content_type': 'text',
 'id': 48,
