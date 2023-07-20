@@ -7,6 +7,7 @@ Tallers_bot
 
 t.me/Tallers_bot
 """
+from datetime import datetime
 import tb_settings
 import tb_dict_currency
 import telebot
@@ -17,72 +18,23 @@ import lxml.html
 from lxml import etree
 import currencyapicom
 client = currencyapicom.Client(tb_settings.CR_TOKEN)
-
-
-print("Телеграмм бот по обмену валют запущен.")
-
-# result = client.currencies(currencies=['EUR', 'RUB'])
-# print(result)
-
-# result = client.currencies()
-# print(result)
-
-# print(tb_settings.CR_REQUEST_CR_LATE)
-# print(tb_settings.CR_REQUEST_CR_LIST)
-
-# r = requests.get(tb_settings.CR_REQUEST_CR_LATE)  # запрашиваем текущие курсы всех валют
-# print(r.content)
-# print(r.status_code)  # узнаем статус полученного ответа
-# curr = json.loads(r.content)  # делаем из полученных байтов Python-объект для удобной работы
-
-# curr = tb_dict_currency.curr
-#
-# data = curr['data']
-# print()
-# dl = 0
-# curr_info_request = ''
-# sd = ''
-# for keys in data.keys():
-#     dl += 1
-#     print(curr['data'][keys]['code'], curr['data'][keys]['value'])
-#     sd = keys
-#     if dl < len(data):
-#         sd += '%2C'
-#     curr_info_request += sd
-# print(curr_info_request)
-
-# currencies_list = tb_dict_currency.currencies_list
-#
-# data = currencies_list['data']
-# print('Список обслуживаемых валют.')
-# dl = 0
-# for keys in data.keys():
-#     dl += 1
-#     if currencies_list['data'][keys] is not None:
-#         print(currencies_list['data'][keys]['code'], '\t-',
-#               currencies_list['data'][keys]['name']
-#               )
-#
-#
-
-#
-# print(tb_settings.CR_REQUEST_CR_LATE + curr_info_request)
-# r = requests.get(tb_settings.CR_REQUEST_CR_LATE + curr_info_request)  # запрашиваем текущие курсы всех валют
-# print(r.content)
-# print(r.status_code)  # узнаем статус полученного ответа
-# val_list = json.loads(r.content)  # делаем из полученных байтов Python-объект для удобной работы
-#
-# print(val_list)
-
-# quit(0)
-
 bot = telebot.TeleBot(tb_settings.TB_TOKEN)
 
-# @bot.message_handler(filters)
-# def function_name(message):
-#     bot.reply_to(message, "This is a message handler")
+
+def date_time_stamp(date_message=None):
+    if date_message is not None:
+        st = datetime.fromtimestamp(int(date_message)).strftime('%d-%m-%Y %H:%M:%S')
+    else:
+        st = datetime.now().strftime('%d-%m-%Y %H:%M:%S')
+    print(st, end=' =>= ')
+    return
 
 
+"""
+@bot.message_handler(filters)
+def function_name(message):
+    bot.reply_to(message, "This is a message handler")
+"""
 
 
 # Обрабатываются все сообщения, содержащие команды '/start' or '/help'.
@@ -93,22 +45,62 @@ def handle_start_help(message):
         name = str(message.chat.username)
         if len(name) == 0:
             name = "путник"
-    print('Пришел запрос от:', name, message.text)
+    date_time_stamp(message.date)
+    print('Прилетел запрос от:', name, message.text)
     
     bot.send_message(message.chat.id, 'Привет тебе, ' + name + ', забредший сюда.')
     bot.send_message(message.chat.id, tb_settings.H_TEXT)
     
     
 # Обрабатывается запрос конвертации валют
-@bot.message_handler(commands=['e', 'ex', 'exch', 'exchange'])
+@bot.message_handler(commands=['e', 'ex', 'exch', 'exchange', 'elist'])
 def handle_exchange(message):
+    date_time_stamp(message.date)
     name = str(message.chat.first_name)
     if len(name) == 0:
         name = str(message.chat.username)
         if len(name) == 0:
             name = "путник"
     cmd_ln = message.text.split()
-    print('Прилетел запрос=', name, cmd_ln)
+    print('Прилетел запрос =', name, cmd_ln)
+    
+    if cmd_ln[0] == '/elist':
+        r = requests.get(tb_settings.CR_REQUEST_CR_LATE)  # запрашиваем текущие курсы всех валют
+        print(f'RAW responce of {len(r.content)} bytes :\n', r.content)
+        print('Status code : ', r.status_code)  # узнаем статус полученного ответа
+        curr = json.loads(r.content)  # делаем из полученных байтов Python-объект для удобной работы
+        print(len(curr['data']))
+        
+        r = requests.get(tb_settings.CR_REQUEST_CR_LIST)  # запрашиваем информацию по валютам
+        print(f'RAW responce of {len(r.content)} bytes :\n', r.content)
+        print('Status code : ', r.status_code)  # узнаем статус полученного ответа
+        curr_info = json.loads(r.content)  # делаем из полученных байтов Python-объект для удобной работы
+        print(len(curr_info['data']))
+        
+        texts = ''
+        for keys in curr['data'].keys():
+            print('Keys current=', keys)
+            if curr['data'][keys] is not None:
+                print('Not empty Keys')
+                s = ''
+                if curr_info['data'][keys] is not None:
+                try:
+                    s = curr_info['data'][keys]['name_plural'] + '\n'
+                except TypeError:
+                    print('For key = [' + keys + ']')
+                    print(curr_info['data'][keys])
+                    s = 'None type error' + '\n'
+                    
+                # amount = curr['data'][keys]['value']
+                # d_v1 = '%.4f'
+                # d_v1 = d_v1 % amount
+                
+                s += curr['data'][keys]['code'] + '\t = ' + str(curr['data'][keys]['value'])
+                print(s)
+                texts += s + '\n'
+        bot.send_message(message.chat.id, texts)
+        return
+    
     if len(cmd_ln) == 4:
         try:
             val1 = currencies_list['data'][str(cmd_ln[1].upper())]  # ['code']
@@ -124,6 +116,7 @@ def handle_exchange(message):
         dec_v1 = '%.' + str(val1['decimal_digits']) + 'f'
         dec_v1 = dec_v1 % amount
         sl = [val1['code'], val2['code'], dec_v1]
+        
         print(sl)
         print(val1)
         print(val2)
@@ -139,8 +132,6 @@ def handle_exchange(message):
     else:
         bot.send_message(message.chat.id, str('Что Вы имели ввиду набрав:\n"' +
                                               str(cmd_ln) + '"?\n\n' + tb_settings.H_TEXT))
-    
-    
     
 
 # Обрабатывается запрос списка валют
@@ -168,6 +159,13 @@ def say_lmao(message: telebot.types.Message):
 @bot.message_handler(func=lambda message: True)
 def other_messages(message):
     bot.send_message(message.chat.id, str('Что Вы имели ввиду набрав:\n"' + message.text + '"?'))
+
+
+"""
+main +++++++++++++++++++++++++++++++++++++++++++
+"""
+date_time_stamp()
+print("Телеграмм бот по обмену валют запущен.")
 
 
 
