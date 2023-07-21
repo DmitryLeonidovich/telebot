@@ -13,20 +13,123 @@ import tb_dict_currency
 import telebot
 import requests
 import json
+from extensions import APIexceptions
 import lxml
 import lxml.html
 from lxml import etree
+import urllib3
+
 import currencyapicom
 client = currencyapicom.Client(tb_settings.CR_TOKEN)
+
 bot = telebot.TeleBot(tb_settings.TB_TOKEN)
 
 
 def date_time_stamp(date_message=None):
     if date_message is not None:
-        st = datetime.fromtimestamp(int(date_message)).strftime('%d-%m-%Y %H:%M:%S')
+        return datetime.fromtimestamp(int(date_message)).strftime('%d-%m-%Y %H:%M:%S')
     else:
-        st = datetime.now().strftime('%d-%m-%Y %H:%M:%S')
-    print(st, end=' =>= ')
+        return datetime.now().strftime('%d-%m-%Y %H:%M:%S')
+
+
+def day_time_sender(_message):
+    print(date_time_stamp(), end=" ")
+    name = str(_message.chat.first_name)
+    if len(name) == 0:
+        name = str(_message.chat.username)
+        if len(name) == 0:
+            name = "путник"
+    cmd_ln = _message.text.split()
+    _s = 'запрос от =' + name + \
+         ' id =' + str(_message.chat.id) + \
+         ' команда =' + str(cmd_ln) + \
+         ' время отправителя ' + date_time_stamp(_message.date)
+    return _s
+
+
+def get_all_currency():
+    try:
+        r = requests.get(tb_settings.CR_REQUEST_CR_LATE)  # запрашиваем текущие курсы всех валют
+        _curr = json.loads(r.content)  # делаем из полученных байтов Python-объект для удобной работы
+    except requests.exceptions.ReadTimeout:
+        _curr = None
+    except TypeError:
+        _curr = None
+    print(f'RAW response of {len(r.content)} bytes :\n', r.content)
+    print('Status code : ', r.status_code)  # узнаем статус полученного ответа
+    print(len(_curr['data']))
+    return _curr
+
+
+def get_all_currency_info():
+    try:
+        r = requests.get(tb_settings.CR_REQUEST_CR_LIST)  # запрашиваем текущие курсы всех валют
+        _curr = json.loads(r.content)  # делаем из полученных байтов Python-объект для удобной работы
+    except requests.exceptions.ReadTimeout:
+        _curr = None
+    except TypeError:
+        _curr = None
+    print(f'RAW response of {len(r.content)} bytes :\n', r.content)
+    print('Status code : ', r.status_code)  # узнаем статус полученного ответа
+    print(len(_curr['data']))
+    return _curr
+
+
+def get_currency_pair(val1, val2, amo):
+    try:
+        r = requests.get(tb_settings.CR_REQUEST_CR_LIST + val1 + "%2C" + val2)  # запрашиваем текущие курсы двух валют
+        _curr = json.loads(r.content)  # делаем из полученных байтов Python-объект для удобной работы
+    except requests.exceptions.ReadTimeout:
+        _curr = None
+        amo = 0
+    except TypeError:
+        _curr = None
+        amo = 0
+    else:
+        pass
+    return amo
+
+
+def all_currency_list_out(_message):
+    print(date_time_stamp(), 'передача списка обслуживаемых валют')
+    texts = ''
+    for keys in curr_list['data'].keys():
+        if curr_list['data'][keys] is not None:
+            s = ''
+            if curr_info['data'][keys] is not None:
+                try: # дополнительная информация о валюте есть
+                    s = curr_info['data'][keys]['name_plural'] + '\n'
+                except TypeError: # ошибка в информационном описании валюты
+                    print('For key = [' + keys + ']')  # беду в консоль
+                    print(curr_info['data'][keys])
+                else:  # дополнительной информации о валюте нет
+                    pass
+            # ========================== блок форматирования вывода по правилам округления из API
+            v_to_round = curr_list['data'][keys]['value']
+            dec_dig = None  # нужна при выводе в консоль
+            if v_to_round < 0.0001:  # для малых значений ставим 10 знаков после запятой
+                s_rounded = '{0:.10f}'.format(v_to_round)
+            elif len(s) != 0:  # нашли доп инфо по валюте и берем из нее число знаков после запятой
+                dec_dig = curr_info['data'][keys]['decimal_digits']
+                s_rounded = '%.' + str(dec_dig) + 'f'
+                s_rounded = s_rounded % v_to_round
+            else:  # доп инфо по валюте нет - выставляем обычный тип формата
+                s_rounded = '{0:f}'.format(v_to_round)
+            if float(s_rounded) == 0:  # проверяем на потерю точности и правим ее по обнаружении
+                s_rounded = '*' + '{0:f}'.format(v_to_round)
+            # ==========================
+            s += curr_list['data'][keys]['code'] + '\t = ' + s_rounded
+            # print(f'Formatted [{keys}/{dec_dig}] =', s_rounded, '\t\t\t\t\t', v_to_round)  # в консоль не выводим
+            texts += s + '\n'
+            if len(texts) > 4000:
+                bot.send_message(_message.chat.id, texts)  # вывод в бот первой части списка сообщением
+                texts = ''
+        # end of "if curr_list['data'][keys] is not None:"
+    if len(texts) > 4096:
+        for x in range(0, len(texts), 4096):
+            bot.send_message(_message.chat.id, texts[x:x + 4096])
+    else:
+        bot.send_message(_message.chat.id, texts)
     return
 
 
@@ -40,14 +143,8 @@ def function_name(message):
 # Обрабатываются все сообщения, содержащие команды '/start' or '/help'.
 @bot.message_handler(commands=['start', 'help'])
 def handle_start_help(message):
+    print(day_time_sender(message))
     name = str(message.chat.first_name)
-    if len(name) == 0:
-        name = str(message.chat.username)
-        if len(name) == 0:
-            name = "путник"
-    date_time_stamp(message.date)
-    print('Прилетел запрос от:', name, message.text)
-    
     bot.send_message(message.chat.id, 'Привет тебе, ' + name + ', забредший сюда.')
     bot.send_message(message.chat.id, tb_settings.H_TEXT)
     
@@ -55,56 +152,17 @@ def handle_start_help(message):
 # Обрабатывается запрос конвертации валют
 @bot.message_handler(commands=['e', 'ex', 'exch', 'exchange', 'elist'])
 def handle_exchange(message):
-    date_time_stamp(message.date)
-    name = str(message.chat.first_name)
-    if len(name) == 0:
-        name = str(message.chat.username)
-        if len(name) == 0:
-            name = "путник"
+    day_time_sender(message)
+    print(date_time_stamp(), end=" ")
     cmd_ln = message.text.split()
-    print('Прилетел запрос =', name, cmd_ln)
     
     if cmd_ln[0] == '/elist':
-        r = requests.get(tb_settings.CR_REQUEST_CR_LATE)  # запрашиваем текущие курсы всех валют
-        print(f'RAW responce of {len(r.content)} bytes :\n', r.content)
-        print('Status code : ', r.status_code)  # узнаем статус полученного ответа
-        curr = json.loads(r.content)  # делаем из полученных байтов Python-объект для удобной работы
-        print(len(curr['data']))
-        
-        r = requests.get(tb_settings.CR_REQUEST_CR_LIST)  # запрашиваем информацию по валютам
-        print(f'RAW responce of {len(r.content)} bytes :\n', r.content)
-        print('Status code : ', r.status_code)  # узнаем статус полученного ответа
-        curr_info = json.loads(r.content)  # делаем из полученных байтов Python-объект для удобной работы
-        print(len(curr_info['data']))
-        
-        texts = ''
-        for keys in curr['data'].keys():
-            print('Keys current=', keys)
-            if curr['data'][keys] is not None:
-                print('Not empty Keys')
-                s = ''
-                if curr_info['data'][keys] is not None:
-                try:
-                    s = curr_info['data'][keys]['name_plural'] + '\n'
-                except TypeError:
-                    print('For key = [' + keys + ']')
-                    print(curr_info['data'][keys])
-                    s = 'None type error' + '\n'
-                    
-                # amount = curr['data'][keys]['value']
-                # d_v1 = '%.4f'
-                # d_v1 = d_v1 % amount
-                
-                s += curr['data'][keys]['code'] + '\t = ' + str(curr['data'][keys]['value'])
-                print(s)
-                texts += s + '\n'
-        bot.send_message(message.chat.id, texts)
         return
     
     if len(cmd_ln) == 4:
-        try:
-            val1 = currencies_list['data'][str(cmd_ln[1].upper())]  # ['code']
-            val2 = currencies_list['data'][str(cmd_ln[2].upper())]  # ['code']
+        try:    # просмотр по словарю наличие информации по запросу
+            val1 = curr_info['data'][str(cmd_ln[1].upper())]  # ['code']
+            val2 = curr_info['data'][str(cmd_ln[2].upper())]  # ['code']
             amount = float(str(cmd_ln[3]))
         except KeyError:
             bot.send_message(message.chat.id, str('Код валюты введен с ошибкой!\n\n' + tb_settings.H_TEXT))
@@ -112,6 +170,7 @@ def handle_exchange(message):
         except ValueError:
             bot.send_message(message.chat.id, str('Число введено с ошибкой!\n\n' + tb_settings.H_TEXT))
             return
+        # наличие подтверждено
         
         dec_v1 = '%.' + str(val1['decimal_digits']) + 'f'
         dec_v1 = dec_v1 % amount
@@ -123,7 +182,7 @@ def handle_exchange(message):
         s = ' '.join(sl)
         print(s)
         
-        result = 1.2345
+        result = amount
         
         dec_v2 = '%.' + str(val2['decimal_digits']) + 'f'
         dec_v2 = dec_v2 % result
@@ -134,25 +193,29 @@ def handle_exchange(message):
                                               str(cmd_ln) + '"?\n\n' + tb_settings.H_TEXT))
     
 
+# Обрабатывается загрузка списка валют в словарь из запроса по API к сервису
+@bot.message_handler(commands=['vload'])
+def handle_load_values(message):
+    print(day_time_sender(message))
+    print(date_time_stamp(), 'запрос данных через API')
+    curr_dummy = get_all_currency()
+    if curr_dummy is not None:
+        tb_dict_currency.currencies_list = curr_dummy
+        curr_dummy = get_all_currency_info()
+        if curr_dummy is not None:
+            tb_dict_currency.currencies_info = curr_dummy
+            return # все считалось
+    print(date_time_stamp(), 'Нет связи с БД валют через API!')
+    return
+
+
 # Обрабатывается запрос списка валют
 @bot.message_handler(commands=['v', 'val', 'value'])
 def handle_values(message):
-    texts = 'Список обслуживаемых валют.\n'
-    data = currencies_list['data']
-    print(texts)
-    dl = 0
-    s = ''
-    for keys in data.keys():
-        dl += 1
-        if currencies_list['data'][keys] is not None:
-            s = currencies_list['data'][keys]['code'] + '\t-' + currencies_list['data'][keys]['name']
-            print(s)
-            texts += s + '\n'
-    bot.send_message(message.chat.id, texts)
-
-@bot.message_handler(content_types=['photo', ])
-def say_lmao(message: telebot.types.Message):
-    bot.reply_to(message, 'Nice meme XDD')
+    print(day_time_sender(message))
+    # print(date_time_stamp(), 'запрос данных через API')
+    all_currency_list_out(message)  # вывод всех обслуживаемых валют и крипты
+    return
 
 
 # не обслуженный входной поток
@@ -164,16 +227,24 @@ def other_messages(message):
 """
 main +++++++++++++++++++++++++++++++++++++++++++
 """
-date_time_stamp()
-print("Телеграмм бот по обмену валют запущен.")
+
+print(date_time_stamp(), "Телеграмм бот по обмену валют запущен")
 
 
+curr_list = tb_dict_currency.currencies_list
+curr_info = tb_dict_currency.currencies_info
 
-currencies_list = tb_dict_currency.currencies_list
+while True:
+    try:
+        bot.infinity_polling()
+    except urllib3.exceptions.ReadTimeoutError:
+        break
+    except requests.exceptions.ReadTimeout:
+        break
+print(date_time_stamp(), 'Что-то пошло не так!')
 
-bot.polling(none_stop=True)
-
-
+#
+#
 
 """
 'id': 864491376, 'first_name': 'Natasha'
