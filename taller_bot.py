@@ -106,17 +106,19 @@ def all_currency_list_out(_message):
                     pass
             # ========================== блок форматирования вывода по правилам округления из API
             v_to_round = curr_list['data'][keys]['value']
-            dec_dig = None  # нужна при выводе в консоль
-            if v_to_round < 0.0001:  # для малых значений ставим 10 знаков после запятой
-                s_rounded = '{0:.10f}'.format(v_to_round)
-            elif len(s) != 0:  # нашли доп инфо по валюте и берем из нее число знаков после запятой
-                dec_dig = curr_info['data'][keys]['decimal_digits']
-                s_rounded = '%.' + str(dec_dig) + 'f'
-                s_rounded = s_rounded % v_to_round
-            else:  # доп инфо по валюте нет - выставляем обычный тип формата
-                s_rounded = '{0:f}'.format(v_to_round)
-            if float(s_rounded) == 0:  # проверяем на потерю точности и правим ее по обнаружении
-                s_rounded = '*' + '{0:f}'.format(v_to_round)
+            #
+            # dec_dig = None  # нужна при выводе в консоль
+            # if v_to_round < 0.0001:  # для малых значений ставим 10 знаков после запятой
+            #     s_rounded = '{0:.10f}'.format(v_to_round)
+            # elif len(s) != 0:  # нашли доп инфо по валюте и берем из нее число знаков после запятой
+            #     dec_dig = curr_info['data'][keys]['decimal_digits']
+            #     s_rounded = '%.' + str(dec_dig) + 'f'
+            #     s_rounded = s_rounded % v_to_round
+            # else:  # доп инфо по валюте нет - выставляем обычный тип формата
+            #     s_rounded = '{0:f}'.format(v_to_round)
+            # if float(s_rounded) == 0:  # проверяем на потерю точности и правим ее по обнаружении
+            #     s_rounded = '*' + '{0:f}'.format(v_to_round)
+            s_rounded = fmt_rnd(v_to_round, keys, len(s) != 0)
             # ==========================
             s += curr_list['data'][keys]['code'] + '\t = ' + s_rounded
             # print(f'Formatted [{keys}/{dec_dig}] =', s_rounded, '\t\t\t\t\t', v_to_round)  # в консоль не выводим
@@ -125,6 +127,8 @@ def all_currency_list_out(_message):
                 bot.send_message(_message.chat.id, texts)  # вывод в бот первой части списка сообщением
                 texts = ''
         # end of "if curr_list['data'][keys] is not None:"
+    texts += 'Все значения соответствуют количеству валюты в одном долларе США. ' \
+             'Информация по состоянию на ' + curr_list['meta']['last_updated_at']
     if len(texts) > 4096:
         for x in range(0, len(texts), 4096):
             bot.send_message(_message.chat.id, texts[x:x + 4096])
@@ -132,6 +136,21 @@ def all_currency_list_out(_message):
         bot.send_message(_message.chat.id, texts)
     return
 
+
+def fmt_rnd(_v_to_round, _keys, info_flg):
+    # v_to_round = curr_list[_val1]['value']
+    dec_dig = None  # нужна при выводе в консоль
+    if _v_to_round < 0.0001:  # для малых значений ставим 10 знаков после запятой
+        _s_rounded = '{0:.10f}'.format(_v_to_round)
+    elif info_flg:  # нашли доп инфо по валюте и берем из нее число знаков после запятой
+        dec_dig = curr_info['data'][_keys]['decimal_digits']
+        _s_rounded = '%.' + str(dec_dig) + 'f'
+        _s_rounded = _s_rounded % _v_to_round
+    else:  # доп инфо по валюте нет - выставляем обычный тип формата
+        _s_rounded = '{0:f}'.format(_v_to_round)
+    if float(_s_rounded) == 0:  # проверяем на потерю точности и правим ее по обнаружении
+        _s_rounded = '*' + '{0:f}'.format(_v_to_round)
+    return _s_rounded
 
 """
 @bot.message_handler(filters)
@@ -159,10 +178,11 @@ def handle_exchange(message):
     if cmd_ln[0] == '/elist':
         return
     
-    if len(cmd_ln) == 4:
+    if len(cmd_ln) == 4:  # обработка команды на конверсию
         try:    # просмотр по словарю наличие информации по запросу
             val1 = curr_info['data'][str(cmd_ln[1].upper())]  # ['code']
             val2 = curr_info['data'][str(cmd_ln[2].upper())]  # ['code']
+            
             amount = float(str(cmd_ln[3]))
         except KeyError:
             bot.send_message(message.chat.id, str('Код валюты введен с ошибкой!\n\n' + tb_settings.H_TEXT))
@@ -171,6 +191,11 @@ def handle_exchange(message):
             bot.send_message(message.chat.id, str('Число введено с ошибкой!\n\n' + tb_settings.H_TEXT))
             return
         # наличие подтверждено
+        ddg1 = curr_info[val1]['decimal_digits']
+        rate1 = curr_list[val1]['values']
+        
+        ddg2 = curr_info[val2]['decimal_digits']
+        rate2 = curr_list[val2]['values']
         
         dec_v1 = '%.' + str(val1['decimal_digits']) + 'f'
         dec_v1 = dec_v1 % amount
@@ -196,14 +221,17 @@ def handle_exchange(message):
 # Обрабатывается загрузка списка валют в словарь из запроса по API к сервису
 @bot.message_handler(commands=['vload'])
 def handle_load_values(message):
+    global curr_list, curr_info
     print(day_time_sender(message))
     print(date_time_stamp(), 'запрос данных через API')
     curr_dummy = get_all_currency()
     if curr_dummy is not None:
         tb_dict_currency.currencies_list = curr_dummy
+        curr_list = curr_dummy
         curr_dummy = get_all_currency_info()
         if curr_dummy is not None:
             tb_dict_currency.currencies_info = curr_dummy
+            curr_info = curr_dummy
             return # все считалось
     print(date_time_stamp(), 'Нет связи с БД валют через API!')
     return
@@ -221,7 +249,11 @@ def handle_values(message):
 # не обслуженный входной поток
 @bot.message_handler(func=lambda message: True)
 def other_messages(message):
-    bot.send_message(message.chat.id, str('Что Вы имели ввиду набрав:\n"' + message.text + '"?'))
+    print(day_time_sender(message))
+    bot.send_message(message.chat.id, str('Что Вы имели ввиду набрав:\n"' +
+                                          message.text +
+                                          '"? В помощь:\n' +
+                                          tb_settings.H_TEXT))
 
 
 """
@@ -233,14 +265,14 @@ print(date_time_stamp(), "Телеграмм бот по обмену валют
 
 curr_list = tb_dict_currency.currencies_list
 curr_info = tb_dict_currency.currencies_info
-
-while True:
-    try:
-        bot.infinity_polling()
-    except urllib3.exceptions.ReadTimeoutError:
-        break
-    except requests.exceptions.ReadTimeout:
-        break
+bot.infinity_polling()
+# while True:
+#     try:
+#
+#     except urllib3.exceptions.ReadTimeoutError:
+#         break
+#     except requests.exceptions.ReadTimeout:
+#         break
 print(date_time_stamp(), 'Что-то пошло не так!')
 
 #
