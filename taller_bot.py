@@ -139,7 +139,7 @@ def all_currency_list_out(_message):
 
 def fmt_rnd(_v_to_round, _keys, info_flg):
     # v_to_round = curr_list[_val1]['value']
-    dec_dig = None  # нужна при выводе в консоль
+    dec_dig = None  # нужна при выводе в консоль при отсутствии доп информации по валюте
     if _v_to_round < 0.0001:  # для малых значений ставим 10 знаков после запятой
         _s_rounded = '{0:.10f}'.format(_v_to_round)
     elif info_flg:  # нашли доп инфо по валюте и берем из нее число знаков после запятой
@@ -241,7 +241,6 @@ def handle_load_values(message):
 @bot.message_handler(commands=['v', 'val', 'value'])
 def handle_values(message):
     print(day_time_sender(message))
-    # print(date_time_stamp(), 'запрос данных через API')
     all_currency_list_out(message)  # вывод всех обслуживаемых валют и крипты
     return
 
