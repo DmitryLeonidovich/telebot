@@ -118,7 +118,9 @@ def all_currency_list_out(_message):
             #     s_rounded = '{0:f}'.format(v_to_round)
             # if float(s_rounded) == 0:  # проверяем на потерю точности и правим ее по обнаружении
             #     s_rounded = '*' + '{0:f}'.format(v_to_round)
-            s_rounded = fmt_rnd(v_to_round, keys, len(s) != 0)
+            
+            s_rounded = fmt_rnd(v_to_round, keys)
+            
             # ==========================
             s += curr_list['data'][keys]['code'] + '\t = ' + s_rounded
             # print(f'Formatted [{keys}/{dec_dig}] =', s_rounded, '\t\t\t\t\t', v_to_round)  # в консоль не выводим
@@ -137,12 +139,12 @@ def all_currency_list_out(_message):
     return
 
 
-def fmt_rnd(_v_to_round, _keys, info_flg):
+def fmt_rnd(_v_to_round, _keys):
     # v_to_round = curr_list[_val1]['value']
     dec_dig = None  # нужна при выводе в консоль при отсутствии доп информации по валюте
     if _v_to_round < 0.0001:  # для малых значений ставим 10 знаков после запятой
         _s_rounded = '{0:.10f}'.format(_v_to_round)
-    elif info_flg:  # нашли доп инфо по валюте и берем из нее число знаков после запятой
+    elif curr_info['data'][_keys] is not None:  # нашли доп инфо по валюте и берем из нее число знаков после запятой
         dec_dig = curr_info['data'][_keys]['decimal_digits']
         _s_rounded = '%.' + str(dec_dig) + 'f'
         _s_rounded = _s_rounded % _v_to_round
@@ -171,48 +173,52 @@ def handle_start_help(message):
 # Обрабатывается запрос конвертации валют
 @bot.message_handler(commands=['e', 'ex', 'exch', 'exchange', 'elist'])
 def handle_exchange(message):
-    day_time_sender(message)
-    print(date_time_stamp(), end=" ")
+    print(day_time_sender(message))
     cmd_ln = message.text.split()
-    
     if cmd_ln[0] == '/elist':
         return
     
     if len(cmd_ln) == 4:  # обработка команды на конверсию
         try:    # просмотр по словарю наличие информации по запросу
-            val1 = curr_info['data'][str(cmd_ln[1].upper())]  # ['code']
-            val2 = curr_info['data'][str(cmd_ln[2].upper())]  # ['code']
+            val1 = curr_info['data'][str(cmd_ln[1].upper())]['code']
+            val2 = curr_info['data'][str(cmd_ln[2].upper())]['code']
             
             amount = float(str(cmd_ln[3]))
+            if amount < 0:
+                amount *= -1
+            elif amount == 0:
+                raise ValueError
+            if val1 == val2:
+                raise KeyError
         except KeyError:
             bot.send_message(message.chat.id, str('Код валюты введен с ошибкой!\n\n' + tb_settings.H_TEXT))
+            print('Код валюты введен с ошибкой =', cmd_ln)
             return
         except ValueError:
             bot.send_message(message.chat.id, str('Число введено с ошибкой!\n\n' + tb_settings.H_TEXT))
+            print('Число введено с ошибкой =', cmd_ln)
             return
         # наличие подтверждено
-        ddg1 = curr_info[val1]['decimal_digits']
-        rate1 = curr_list[val1]['values']
+        ddg1 = curr_info['data'][val1]['decimal_digits']
+        rate1 = curr_list['data'][val1]['value']
         
-        ddg2 = curr_info[val2]['decimal_digits']
-        rate2 = curr_list[val2]['values']
+        ddg2 = curr_info['data'][val2]['decimal_digits']
+        rate2 = curr_list['data'][val2]['value']
         
-        dec_v1 = '%.' + str(val1['decimal_digits']) + 'f'
+        result = amount * rate2 / rate1
+        
+        print(val1, ddg1, fmt_rnd(rate1, val1), rate1)
+        print(val2, ddg2, fmt_rnd(rate2, val2), rate2)
+        print(val1, ddg1, fmt_rnd(result, val1), result)
+        
+        
+        
+        dec_v1 = '%.' + str(curr_info['data'][val1]['decimal_digits']) + 'f'
         dec_v1 = dec_v1 % amount
-        sl = [val1['code'], val2['code'], dec_v1]
-        
-        print(sl)
-        print(val1)
-        print(val2)
-        s = ' '.join(sl)
-        print(s)
-        
-        result = amount
-        
-        dec_v2 = '%.' + str(val2['decimal_digits']) + 'f'
+        dec_v2 = '%.' + str(curr_info['data'][val2]['decimal_digits']) + 'f'
         dec_v2 = dec_v2 % result
         # str(f'={amount:.2f}')
-        bot.send_message(message.chat.id, str(val1['code'] + '=' + dec_v1 + ' -> ' + val2['code'] + '=' + dec_v2))
+        bot.send_message(message.chat.id, str(val1 + '=' + dec_v1 + ' -> ' + val2 + '=' + dec_v2))
     else:
         bot.send_message(message.chat.id, str('Что Вы имели ввиду набрав:\n"' +
                                               str(cmd_ln) + '"?\n\n' + tb_settings.H_TEXT))
