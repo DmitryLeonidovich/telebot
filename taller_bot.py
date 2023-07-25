@@ -217,8 +217,9 @@ def handle_exchange(message):
         dec_v1 = dec_v1 % amount
         dec_v2 = '%.' + str(curr_info['data'][val2]['decimal_digits']) + 'f'
         dec_v2 = dec_v2 % result
-        # str(f'={amount:.2f}')
-        bot.send_message(message.chat.id, str(val1 + '=' + dec_v1 + ' -> ' + val2 + '=' + dec_v2))
+        s = str(val1 + '=' + dec_v1 + ' <=> ' + val2 + '=' + dec_v2)
+        print(s)
+        bot.send_message(message.chat.id, s)
     else:
         bot.send_message(message.chat.id, str('Что Вы имели ввиду набрав:\n"' +
                                               str(cmd_ln) + '"?\n\n' + tb_settings.H_TEXT))
