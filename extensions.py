@@ -13,6 +13,7 @@ class APIexceptions(Exception):
 class NoLinkToDB(APIexceptions):
     def __init__(self, errmsg=''):
         self.errmsg = "API error:" + errmsg
+    
 class API:
     def __init__(self, _curr_rate=None, _curr_info=None):
         _cu_list = _curr_rate

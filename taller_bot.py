@@ -10,21 +10,20 @@ t.me/Tallers_bot
 from tb_sec_set import TB_TOKEN
 from tb_settings import *
 from datetime import datetime
+from extensions import NoLinkToDB
 import tb_dict_currency
 import telebot
 import requests
 import json
 import pickle
-# from extensions import APIexceptions
-# import lxml
-# import lxml.html
-# from lxml import etree
-# import urllib3
-
 import currencyapicom
+
 client = currencyapicom.Client(CR_TOKEN)
 
 bot = telebot.TeleBot(TB_TOKEN)
+
+last_update = None
+ut_last_checked = 0
 
 
 def date_time_stamp(date_message=None):
@@ -49,49 +48,56 @@ def day_time_sender(_message):
     return _s
 
 
-def get_all_currency():
+def get_all_currency(mode='list'):
     r = None
+    _curr = None
+    se = ''
+    if mode == 'list':
+        mode = CR_REQUEST_CR_LATE
+    elif mode == 'info':
+        mode = CR_REQUEST_CR_LIST
     try:
-        r = requests.get(CR_REQUEST_CR_LATE)  # запрашиваем текущие курсы всех валют
+        r = requests.get(mode)  # запрашиваем данные всех валют
         _curr = json.loads(r.content)  # делаем из полученных байтов Python-объект для удобной работы
-    except requests.exceptions.ReadTimeout:
-        _curr = None
-    except TypeError:
-        _curr = None
-    print(f'RAW response of {len(r.content)} bytes :\n', r.content)
-    print('Status code : ', r.status_code)  # узнаем статус полученного ответа
-    print(len(_curr['data']))
-    return _curr
-
-
-def get_all_currency_info():
-    r = None
-    try:
-        r = requests.get(CR_REQUEST_CR_LIST)  # запрашиваем текущие курсы всех валют
-        _curr = json.loads(r.content)  # делаем из полученных байтов Python-объект для удобной работы
-    except requests.exceptions.ReadTimeout:
-        _curr = None
-    except TypeError:
-        _curr = None
-    print(f'RAW response of {len(r.content)} bytes :\n', r.content)
-    print('Status code : ', r.status_code)  # узнаем статус полученного ответа
-    print(len(_curr['data']))
-    return _curr
-
-
-def get_currency_pair(val1, val2, amo):
-    try:
-        r = requests.get(CR_REQUEST_CR_LIST + val1 + "%2C" + val2)  # запрашиваем текущие курсы двух валют
-        _curr = json.loads(r.content)  # делаем из полученных байтов Python-объект для удобной работы
-    except requests.exceptions.ReadTimeout:
-        _curr = None
-        amo = 0
-    except TypeError:
-        _curr = None
-        amo = 0
+        if r.status_code != 200:
+            _curr = None
+            raise NoLinkToDB('API не отвечает!')
+    except requests.exceptions.ConnectionError as e:
+        se = e
+    except requests.exceptions.ReadTimeout as e:
+        se = e
+    except TypeError as e:
+        se = e
+    except NoLinkToDB as e:
+        se = e
     else:
-        pass
-    return amo
+        print(f'RAW response of {len(r.content)} bytes :\n', r.content)
+        # print('Status code : ', r.status_code)  # узнаем статус полученного ответа
+        print('Number of currencies', len(_curr['data']))
+    finally:
+        if se != '':
+            print(date_time_stamp(), '! ', se)
+    return _curr
+
+
+#
+# def get_all_currency_info():
+#     r = None
+#     try:
+#         r = requests.get(CR_REQUEST_CR_LIST)  # запрашиваем текущие курсы всех валют
+#         _curr = json.loads(r.content)  # делаем из полученных байтов Python-объект для удобной работы
+#     except requests.exceptions.ReadTimeout:
+#         _curr = None
+#     except TypeError:
+#         _curr = None
+#     print(f'RAW response of {len(r.content)} bytes :\n', r.content)
+#     print('Status code : ', r.status_code)  # узнаем статус полученного ответа
+#     print(len(_curr['data']))
+#     return _curr
+
+
+def get_currency_pair(val1, val2):  # запрашиваем текущие курсы двух валют
+    return get_all_currency(CR_REQUEST_CR_LIST + val1 + "%2C" + val2)
 
 
 def all_currency_list_out(_message):
@@ -118,7 +124,7 @@ def all_currency_list_out(_message):
                 texts = ''
         # end of "if curr_list['data'][keys] is not None:"
     texts += 'Все значения соответствуют количеству валюты в одном долларе США. ' \
-             'Информация по состоянию на ' + curr_list['meta']['last_updated_at']
+             'Информация по состоянию на ' + reorder_dt(curr_list['meta']['last_updated_at'])
     if len(texts) > 4096:
         for x in range(0, len(texts), 4096):
             bot.send_message(_message.chat.id, texts[x:x + 4096])
@@ -165,6 +171,8 @@ def handle_exchange(message):
     print(day_time_sender(message))
     cmd_ln = message.text.split()
     if cmd_ln[0] == '/elist':
+        bot.send_message(message.chat.id, str('Команда [/elist] пока не поддерживается'))
+        print('Пока не поддерживается =', cmd_ln)
         return
     
     if len(cmd_ln) == 4:  # обработка команды на конверсию
@@ -188,69 +196,61 @@ def handle_exchange(message):
             print('Число введено с ошибкой =', cmd_ln)
             return
         # наличие подтверждено
-        ddg1 = curr_info['data'][val1]['decimal_digits']
+        # ddg1 = curr_info['data'][val1]['decimal_digits']
         rate1 = curr_list['data'][val1]['value']
         
-        ddg2 = curr_info['data'][val2]['decimal_digits']
+        # ddg2 = curr_info['data'][val2]['decimal_digits']
         rate2 = curr_list['data'][val2]['value']
         
         result = amount * rate2 / rate1
         
-        print(val1, ddg1, fmt_rnd(rate1, val1), rate1)
-        print(val2, ddg2, fmt_rnd(rate2, val2), rate2)
-        print(val1, ddg1, fmt_rnd(result, val1), result)
+        # print(val1, ddg1, fmt_rnd(rate1, val1), rate1)
+        # print(val2, ddg2, fmt_rnd(rate2, val2), rate2)
+        # print(val1, ddg1, fmt_rnd(result, val1), result)
         
         dec_v1 = '%.' + str(curr_info['data'][val1]['decimal_digits']) + 'f'
         dec_v1 = dec_v1 % amount
         dec_v2 = '%.' + str(curr_info['data'][val2]['decimal_digits']) + 'f'
         dec_v2 = dec_v2 % result
         s = str(val1 + '=' + dec_v1 + ' <=> ' + val2 + '=' + dec_v2)
-        print(s)
+        print(date_time_stamp(), s)
         bot.send_message(message.chat.id, s)
     else:
         bot.send_message(message.chat.id, str('Что Вы имели ввиду набрав:\n"' +
                                               str(cmd_ln) + '"?\n\n' + H_TEXT))
     
 
-# Обрабатывается загрузка списка валют в словарь из запроса по API к сервису
+# Обрабатывается загрузка списка валют из запроса по API к сервису в словарь с его сохранением
 @bot.message_handler(commands=['vload'])
 def handle_load_values(message):
-    global curr_list, curr_info
     print(day_time_sender(message))
-    print(date_time_stamp(), 'запрос данных через API')
-    curr_dummy = get_all_currency()
-    if curr_dummy is not None:
-        tb_dict_currency.currencies_list = curr_dummy
-        curr_list = curr_dummy
-        curr_dummy = get_all_currency_info()
-        if curr_dummy is not None:
-            tb_dict_currency.currencies_info = curr_dummy
-            curr_info = curr_dummy  # все считалось
-            with open('tlbdatacl.pkl', 'wb') as f:  # сохраним в файл
-                pickle.dump(tb_dict_currency.currencies_list, f)
-            with open('tlbdatain.pkl', 'wb') as f:  # сохраним в файл
-                pickle.dump(tb_dict_currency.currencies_info, f)
-            return
-    print(date_time_stamp(), 'Нет связи с БД валют через API!')
+    print(date_time_stamp(), 'Запрос данных через API')
+    ask_server()
     return
 
 
-# Обрабатывается записи словаря из запроса по API к сервису на диск
-@bot.message_handler(commands=['w'])
-def handle_load_values(message):
-    global curr_list, curr_info
+# Отрабатывается запись текущего словаря на диск
+@bot.message_handler(commands=['vsave'])
+def handle_load_values_and_wright(message):
     print(day_time_sender(message))
-    print(date_time_stamp(), 'запрос данных через API')
-    curr_dummy = get_all_currency()
-    if curr_dummy is not None:
-        tb_dict_currency.currencies_list = curr_dummy
-        curr_list = curr_dummy
-        curr_dummy = get_all_currency_info()
-        if curr_dummy is not None:
-            tb_dict_currency.currencies_info = curr_dummy
-            curr_info = curr_dummy
-            return  # все считалось
-    print(date_time_stamp(), 'Нет связи с БД валют через API!')
+    print(date_time_stamp(), 'Запись базы на диск.')
+    ss2 = 'tlbdata_cl.pkl '
+    if not save_dict('tlbdata_cl.pkl'):
+        ss2 += 'не '
+    ss2 += 'сохранен, tlbdata_in.pkl '
+    if not save_dict('tlbdata_in.pkl'):
+        ss2 += 'не '
+    ss2 += 'сохранен'
+    bot.send_message(message.chat.id, ss2)
+    return
+
+
+# Отрабатывается запись текущего словаря на диск
+@bot.message_handler(commands=['vinfo'])
+def handle_load_values_and_wright(message):
+    print(day_time_sender(message))
+    print(date_time_stamp(), 'Дата и время загрузки базы валют.')
+    bot.send_message(message.chat.id, curr_version())
     return
 
 
@@ -277,28 +277,35 @@ def reorder_dt(rs):
     return s
 
 
-def load_dict(fn, dict_struct):
+def load_dict(fn):
+    print(date_time_stamp(), end=' <- ')
+    dict_struct = None
     try:
         with open(fn, 'rb') as f:
             dict_struct = pickle.load(f)
-            print('Загружена база', fn, '\n', dict_struct)
-            return True
+            print('Загружена база из файла', fn)
     except FileNotFoundError:
         print('Файл ', fn, 'загрузить с диска не удалось. Используется старый.')
     except UnicodeDecodeError:
         print('Файл ', fn, 'содержит ошибки. Используется старый.')
     except pickle.UnpicklingError:
         print('Файл ', fn, 'содержит ошибки. Используется старый.')
-    return False
+    return dict_struct
 
 
-def save_dict(fn, dict_struct):
+def save_dict(fn):
+    print(date_time_stamp(), end=' -> ')
     try:
         with open(fn, 'wb') as f:
-            pickle.dump(dict_struct, f)
-            print('Записан файл', fn, '\n', dict_struct)
+            if fn == 'tlbdata_cl.pkl':
+                pickle.dump(curr_list, f)
+            elif fn == 'tlbdata_in.pkl':
+                pickle.dump(curr_info, f)
+            else:
+                raise FileNotFoundError
+            print('Записан файл', fn)
             return True
-    except FileNotFoundError:
+    except PermissionError:
         print('Файл ', fn, 'записать на диск не удалось.')
     except UnicodeDecodeError:
         print('Файл ', fn, 'содержит ошибки.')
@@ -308,8 +315,8 @@ def save_dict(fn, dict_struct):
 
 
 def not_up_to_date():
-    last_update = curr_list['meta']['last_updated_at']
-    print(reorder_dt(last_update), 'Загруженная версия котировок.')
+    global last_update, ut_last_checked
+    curr_version()
     ts1 = datetime(int(last_update[0:4]),
                    int(last_update[5:7]),
                    int(last_update[8:10]),
@@ -318,6 +325,7 @@ def not_up_to_date():
                    int(last_update[17:19])) \
         .timestamp()
     ts2 = datetime.now().timestamp()
+    ut_last_checked = ts2
     return (ts2-ts1) > UPD_INTERVAL_SEC
 
 
@@ -326,31 +334,70 @@ def base_load():
     error_flag = 0
     if not_up_to_date():
         print('Устаревшие данные, загружаем из файлов.')
-        if not load_dict('tlbdatacl.pkl', tb_dict_currency.currencies_list):
+        d_s = load_dict('tlbdata_cl.pkl')
+        if d_s is not None:
+            tb_dict_currency.currencies_list = d_s
+        else:
             error_flag += 1
-        if not load_dict('tlbdatain.pkl', tb_dict_currency.currencies_info):
+        d_s = load_dict('tlbdata_in.pkl')
+        if d_s is not None:
+            tb_dict_currency.currencies_info = d_s
+        else:
             error_flag += 2
-    
     if error_flag & 1 != 1:
         curr_list = tb_dict_currency.currencies_list
-        
     if error_flag & 2 != 2:
         curr_info = tb_dict_currency.currencies_info
-    
-    last_update = reorder_dt(tb_dict_currency.currencies_list['meta']['last_updated_at'])
-    print(last_update, 'используемая версия котировок.')
+    curr_version('Загружена версия котировок от')
     return error_flag
+    
+
+def curr_version(info_str='Используется версия котировок от'):
+    global last_update
+    last_update = curr_list['meta']['last_updated_at']
+    s_out = date_time_stamp() + '    ' + info_str + ' ' + reorder_dt(last_update)
+    print(s_out)
+    return s_out
+
+
+def ask_server():
+    global curr_list, curr_info
+    
+    curr_dummy = get_all_currency('list')
+    if curr_dummy is not None:
+        tb_dict_currency.currencies_list = curr_dummy
+        curr_list = curr_dummy
+        save_dict('tlbdata_cl.pkl')
+        
+        curr_dummy = get_all_currency('info')
+        if curr_dummy is not None:
+            tb_dict_currency.currencies_info = curr_dummy
+            curr_info = curr_dummy
+            save_dict('tlbdata_in.pkl')
+            
+    curr_version()
+    return
+
+
+def ask_server_if_needed():
+    if not_up_to_date():
+        print('Устаревшие данные, загружаем с сервера через API.')
+        curr_version()
+        ask_server()
+    return
 
 
 """
 main +++++++++++++++++++++++++++++++++++++++++++
 """
 print(date_time_stamp(), "Телеграмм бот по обмену валют запущен")
+print('Период ожидания обновления базы', UPD_INTERVAL_SEC / 3600, ' часов')
 # загрузка словарей валюты и правил округления (по умолчанию - старые данные)
 curr_list = tb_dict_currency.currencies_list
 curr_info = tb_dict_currency.currencies_info
 base_load()
+ask_server_if_needed()
 
-#bot.infinity_polling()
+bot.infinity_polling()
 
-#print(date_time_stamp(), '\n\nЧто-то пошло не так!')
+print(date_time_stamp(), '\n\nЧто-то пошло не так!')
