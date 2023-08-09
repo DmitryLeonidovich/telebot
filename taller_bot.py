@@ -26,7 +26,8 @@ last_update = None
 ut_last_checked = 0
 curr_list = {}          # объявление рабочего списка валют
 curr_info = {}          # объявление рабочего списка правил округления и обозначения валют
-
+user_id = ''            # Идентификатор пользователя текущего сеанса
+awaiting_curr_cont = False  # Флаг ожидания ввода валюты и числа
 
 def date_time_stamp(date_message=None):
     if date_message is not None:
@@ -141,22 +142,36 @@ def fmt_rnd(_v_to_round, _keys):
 # Обрабатываются все сообщения, содержащие команды '/start' or '/help'.
 @bot.message_handler(commands=['start', 'help'])
 def handle_start_help(message):
+    global user_id
     print(day_time_sender(message))
     name = str(message.chat.first_name)
-    bot.send_message(message.chat.id, 'Привет тебе, ' + name + ', забредший сюда.')
+    bot.send_message(message.chat.id, 'Приветствуем Вас, ' + name + '.\nЗдесь можно узнать котировки\n'
+                                                                    'обычных и цифровых валют.')
     bot.send_message(message.chat.id, H_TEXT)
+    user_id = str(message.chat.id)
+
+
+def check_instance_list(to_test=''):
+    if to_test == '':
+        return to_test
+    # print('В мой обработчик прилетело ', type(to_test), to_test)
+    if isinstance(to_test, list):
+        # print('В работу пошло ', to_test)
+        return to_test
+    else:
+        # print('Разделим по элементам')
+        return to_test.split()
     
     
-# Обрабатывается запрос конвертации валют
-@bot.message_handler(commands=['e', 'ex', 'exch', 'exchange', 'elive'])
-def handle_exchange(message):
+def exchange_procedure(cmd_ln, message):
+    global awaiting_curr_cont
+    cmd_ln = check_instance_list(cmd_ln)    # проверка на наличие команды с атрибутами
     print(day_time_sender(message))
-    cmd_ln = message.text.split()
     if len(cmd_ln) == 4:  # обработка команды на конверсию
-        try:    # просмотр по словарю наличие информации по запросу
+        try:  # просмотр по словарю наличие информации по запросу
             pair_rate = None
             pair_info = None
-            if cmd_ln[0] == '/elive':               # принудительный запрос двух валют через API  ++++++++++++++++++++
+            if cmd_ln[0].lower() == '/elive':  # принудительный запрос двух валют через API  ++++++++++++++++++++
                 pair_rate = get_currency_pair_rate(str(cmd_ln[1].upper()), str(cmd_ln[2].upper()))
                 pair_info = get_currency_pair_info(str(cmd_ln[1].upper()), str(cmd_ln[2].upper()))
             if pair_rate is not None:
@@ -165,14 +180,14 @@ def handle_exchange(message):
             else:
                 val1 = curr_info['data'][str(cmd_ln[1].upper())]['code']
                 val2 = curr_info['data'][str(cmd_ln[2].upper())]['code']
-                
-            s_a = str(cmd_ln[3])    # исправление десятичного разделителя на "автомате" с продолжением работы
-            s_a = s_a.replace(',', '.')
+            
+            s_a = str(cmd_ln[3]).replace(',', '.')  # исправление десятичного разделителя на "автомате"
+            
             amount = float(s_a)
             if amount < 0:
-                amount *= -1        # исправление отрицательных чисел на "автомате" с продолжением работы
+                amount *= -1  # исправление отрицательных чисел на "автомате" с продолжением работы
             elif amount == 0:
-                raise ValueError    # исключение обмена нулевых сумм
+                raise ValueError  # исключение обмена нулевых сумм
         except KeyError as e:
             bot.send_message(message.chat.id, str('Код валюты введен с ошибкой!\n' + str(e.args[0]) + '\n' + H_TEXT))
             print('Код валюты введен с ошибкой =', e.args[0])
@@ -207,16 +222,28 @@ def handle_exchange(message):
         print(date_time_stamp(), s)
         bot.send_message(message.chat.id, s)
     else:
-        bot.send_message(message.chat.id, str('Что Вы имели ввиду набрав:\n"' +
-                                              str(cmd_ln) + '"?\n\n' + H_TEXT))
-    
+        # bot.send_message(message.chat.id, str('Что Вы имели ввиду набрав:\n"' +
+        #                                       str(cmd_ln) + '"?\n\n' + H_TEXT))
+        bot.send_message(message.chat.id, str('Введите две валюты и сколько надо '
+                                              'первой из них?'))
+        awaiting_curr_cont = True
+    return
+
+
+# Обрабатывается запрос конвертации валют
+@bot.message_handler(commands=['e', 'exchange', 'elive'])
+def handle_exchange(_message):
+    _cmd_ln = _message.text.split()
+    exchange_procedure(_cmd_ln, _message)
+    return
 
 # Обрабатывается загрузка списка валют из запроса по API к сервису в словарь с его сохранением +++++++++++++++++++++++
 @bot.message_handler(commands=['vload'])
 def handle_load_values(message):
     print(day_time_sender(message))
     print(date_time_stamp(), 'Запрос данных через API')
-    ask_server()
+    if ask_server():
+        bot.send_message(message.chat.id, 'Успешно загружено ' + str(len(curr_list['data'])) + ' записей о доступных валютах')
     return
 
 
@@ -242,27 +269,80 @@ def handle_load_values_and_wright(message):
     print(day_time_sender(message))
     print(date_time_stamp(), 'Время "свежего" запроса к базе ',
           datetime.fromtimestamp(ut_last_checked).strftime('%d-%m-%Y %H:%M:%S'))
-    bot.send_message(message.chat.id, curr_version())
+    bot.send_message(message.chat.id, curr_version() + '\nИсточник данных:\nhttps://currencyapi.com\n')
     return
 
 
-# Обрабатывается запрос списка валют
-@bot.message_handler(commands=['v', 'val', 'values'])
-def handle_values(message):
+def currency_listing_procedure(message):
     print(day_time_sender(message))
     all_currency_list_out(message)  # вывод всех обслуживаемых валют и крипты
+    return
+
+# Обрабатывается запрос списка валют
+@bot.message_handler(commands=['v', 'values'])
+def handle_values(_message):
+    currency_listing_procedure(_message)
     return
 
 
 # не обслуженный входной поток
 @bot.message_handler(func=lambda message: True)
 def other_messages(message):
+    global user_id, awaiting_curr_cont
     print(day_time_sender(message))
-    bot.send_message(message.chat.id, str('Что Вы имели ввиду набрав:\n"' +
-                                          message.text +
-                                          '"? В помощь:\n' +
-                                          H_TEXT))
+    ms = message.text
+    print(' ' * 20 + 'Undetectable message received:[' + ms + '] Message chat ID:', message.chat.id)
+    ms = ms.lower()
+    if '/exchange ' in ms or '/e ' in ms:
+        print(' ' * 20 + 'На исправление команды определения курса')
+        exchange_procedure(ms, message)
+        return
+    if '/v' in ms or '/values' in ms:
+        print(' ' * 20 + 'На исправление команды вывода списка валют')
+        currency_listing_procedure(message) #
+        return
+    if '/start' in ms or '/help' in ms or ms == '?':
+        print(' ' * 20 + 'На исправление команды вывода справки')
+        bot.send_message(message.chat.id, H_TEXT)
+        user_id = str(message.chat.id)
+        return
+    if ms.lower() == '/more':
+        if user_id == str(message.chat.id):
+            s = 'Вывод подробной информации пользователю после просмотра им краткой справки'
+            bot.send_message(message.chat.id, str(H_ADTN1))
+        else:
+            s = 'Вывод подробной информации пользователю только после просмотра краткой справки'
+        print(' ' * 20 + s)
+        user_id = ''
+        return
+    if awaiting_curr_cont:  # проверка на продолжение ввода валют
+        print(' ' * 20 + 'На продолжение ввода валют')
+        awaiting_curr_cont = False
+        ms = message.text
+        ms = ms.upper().split()
+        if len(ms) > 2:
+            if ms[0] in curr_list['data'] and ms[1] in curr_info['data']:
+                ms[2] = str(ms[2]).replace(',', '.')  # исправление десятичного разделителя на "автомате"
+                if is_numeric(ms[2]):
+                    ms.insert(0, '/e')
+                    exchange_procedure(ms, message)
+                    return
+        print(' ' * 20 + 'Ошибка при вводе данных ' + str(ms))
+        bot.send_message(message.chat.id, 'Вы ошиблись при вводе данных. Повторите еще раз.')
+    else:
+        bot.send_message(message.chat.id, str('Что Вы имели ввиду набрав:\n"' +
+                                              message.text +
+                                              '"?\nВ помощь:\n' +
+                                              H_TEXT))
 
+
+def is_numeric(s):  # проверка строки на содержание в ней целого или дробного десятичного числа
+    try:
+        float(s)
+        return True
+    except ValueError:
+        return s.isnumeric()
+        
 
 def reorder_dt(rs):
     return rs[8:10] + '-' + rs[5:7] + '-' + rs[0:4] + ' ' + rs[11:19]
@@ -360,7 +440,7 @@ def curr_version(info_str='Используется версия котиров�
 
 def ask_server():
     global curr_list, curr_info
-    
+    load_ok = False
     curr_dummy = get_all_currency('list')
     if curr_dummy is not None:
         tb_dict_currency.currencies_list = curr_dummy
@@ -372,9 +452,10 @@ def ask_server():
             tb_dict_currency.currencies_info = curr_dummy
             curr_info = curr_dummy
             save_dict('tlbdata_in.pkl')
-            
+            load_ok = True
+        
     curr_version()
-    return
+    return load_ok
 
 
 def ask_server_if_needed():
@@ -390,6 +471,7 @@ main +++++++++++++++++++++++++++++++++++++++++++
 """
 print(date_time_stamp(), "Телеграмм бот по обмену валют запущен")
 print('Период ожидания обновления базы', UPD_INTERVAL_SEC / 3600, ' часов')
+print(H_ADTN)
 default_load()  # загрузка словарей валюты и правил округления (по умолчанию - старые данные)
 base_load()
 ask_server_if_needed()
