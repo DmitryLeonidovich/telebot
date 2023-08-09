@@ -8,15 +8,21 @@ r = requests.get(  # делаем запрос на сервер по перед
     'https://baconipsum.com/api/?type=all-meat&paras=3&start-with-lorem=1&format=html')
 print(r.content)
 print(r.status_code)  # узнаем статус полученного ответа
+print()
 
 r = requests.get('https://baconipsum.com/api/?type=meat-and-filler')  # попробуем поймать json-ответ
 print(r.content)
+print(r.status_code)  # узнаем статус полученного ответа
+print()
 
+print('To JSON conversion')
 texts = json.loads(r.content)  # делаем из полученных байтов Python-объект для удобной работы
 print(type(texts))  # проверяем тип сконвертированных данных
+print()
 
 for text in texts:  # выводим полученный текст. Но для того чтобы он влез в консоль, оставим только первые 50 символов.
     print(text[:50], '\n')
+print()
 
 r = requests.get('https://api.github.com')
 

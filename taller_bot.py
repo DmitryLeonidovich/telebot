@@ -24,6 +24,8 @@ bot = telebot.TeleBot(TB_TOKEN)
 
 last_update = None
 ut_last_checked = 0
+curr_list = {}          # объявление рабочего списка валют
+curr_info = {}          # объявление рабочего списка правил округления и обозначения валют
 
 
 def date_time_stamp(date_message=None):
@@ -49,19 +51,21 @@ def day_time_sender(_message):
 
 
 def get_all_currency(mode='list'):
+    mode_type = 'котировки валюты'
     r = None
     _curr = None
     se = ''
     if mode == 'list':
         mode = CR_REQUEST_CR_LATE
     elif mode == 'info':
+        mode_type = 'инфо по валюте'
         mode = CR_REQUEST_CR_LIST
     try:
         r = requests.get(mode)  # запрашиваем данные всех валют
         _curr = json.loads(r.content)  # делаем из полученных байтов Python-объект для удобной работы
         if r.status_code != 200:
             _curr = None
-            raise NoLinkToDB('API не отвечает!')
+            raise NoLinkToDB(r.status_code)
     except requests.exceptions.ConnectionError as e:
         se = e
     except requests.exceptions.ReadTimeout as e:
@@ -69,10 +73,9 @@ def get_all_currency(mode='list'):
     except TypeError as e:
         se = e
     except NoLinkToDB as e:
-        se = e
+        se = 'Обращение к API ['+ mode_type + '] ' + e.e_code
     else:
         print(f'RAW response of {len(r.content)} bytes :\n', r.content)
-        # print('Status code : ', r.status_code)  # узнаем статус полученного ответа
         print('Number of currencies', len(_curr['data']))
     finally:
         if se != '':
@@ -80,24 +83,12 @@ def get_all_currency(mode='list'):
     return _curr
 
 
-#
-# def get_all_currency_info():
-#     r = None
-#     try:
-#         r = requests.get(CR_REQUEST_CR_LIST)  # запрашиваем текущие курсы всех валют
-#         _curr = json.loads(r.content)  # делаем из полученных байтов Python-объект для удобной работы
-#     except requests.exceptions.ReadTimeout:
-#         _curr = None
-#     except TypeError:
-#         _curr = None
-#     print(f'RAW response of {len(r.content)} bytes :\n', r.content)
-#     print('Status code : ', r.status_code)  # узнаем статус полученного ответа
-#     print(len(_curr['data']))
-#     return _curr
+def get_currency_pair_rate(val1, val2):  # запрашиваем текущие курсы двух валют
+    return get_all_currency(CR_REQUEST_CR_LATE + '&currencies=' + val1 + "%2C" + val2)
 
 
-def get_currency_pair(val1, val2):  # запрашиваем текущие курсы двух валют
-    return get_all_currency(CR_REQUEST_CR_LIST + val1 + "%2C" + val2)
+def get_currency_pair_info(val1, val2):  # запрашиваем текущие курсы двух валют
+    return get_all_currency(CR_REQUEST_CR_LIST + '&currencies=' + val1 + "%2C" + val2)
 
 
 def all_currency_list_out(_message):
@@ -107,17 +98,16 @@ def all_currency_list_out(_message):
         if curr_list['data'][keys] is not None:
             s = ''
             if curr_info['data'][keys] is not None:
-                try:  # дополнительная информация о валюте есть
+                try:    # дополнительная информация о валюте есть
                     s = curr_info['data'][keys]['name_plural'] + '\n'
                 except TypeError:  # ошибка в информационном описании валюты
                     print('For key = [' + keys + ']')  # беду в консоль
                     print(curr_info['data'][keys])
-                else:  # дополнительной информации о валюте нет
+                else:   # дополнительной информации о валюте нет
                     pass
             v_to_round = curr_list['data'][keys]['value']
             s_rounded = fmt_rnd(v_to_round, keys)
             s += curr_list['data'][keys]['code'] + '\t = ' + s_rounded
-            # print(f'Formatted [{keys}/{dec_dig}] =', s_rounded, '\t\t\t\t\t', v_to_round)  # в консоль не выводим
             texts += s + '\n'
             if len(texts) > 4000:
                 bot.send_message(_message.chat.id, texts)  # вывод в бот первой части списка сообщением
@@ -134,7 +124,6 @@ def all_currency_list_out(_message):
 
 
 def fmt_rnd(_v_to_round, _keys):
-    # v_to_round = curr_list[_val1]['value']
     dec_dig = None  # нужна при выводе в консоль при отсутствии доп информации по валюте
     if _v_to_round < 0.0001:  # для малых значений ставим 10 знаков после запятой
         _s_rounded = '{0:.10f}'.format(_v_to_round)
@@ -149,13 +138,6 @@ def fmt_rnd(_v_to_round, _keys):
     return _s_rounded
 
 
-"""
-@bot.message_handler(filters)
-def function_name(message):
-    bot.reply_to(message, "This is a message handler")
-"""
-
-
 # Обрабатываются все сообщения, содержащие команды '/start' or '/help'.
 @bot.message_handler(commands=['start', 'help'])
 def handle_start_help(message):
@@ -166,51 +148,60 @@ def handle_start_help(message):
     
     
 # Обрабатывается запрос конвертации валют
-@bot.message_handler(commands=['e', 'ex', 'exch', 'exchange', 'elist'])
+@bot.message_handler(commands=['e', 'ex', 'exch', 'exchange', 'elive'])
 def handle_exchange(message):
     print(day_time_sender(message))
     cmd_ln = message.text.split()
-    if cmd_ln[0] == '/elist':
-        bot.send_message(message.chat.id, str('Команда [/elist] пока не поддерживается'))
-        print('Пока не поддерживается =', cmd_ln)
-        return
-    
     if len(cmd_ln) == 4:  # обработка команды на конверсию
         try:    # просмотр по словарю наличие информации по запросу
-            val1 = curr_info['data'][str(cmd_ln[1].upper())]['code']
-            val2 = curr_info['data'][str(cmd_ln[2].upper())]['code']
-            
-            amount = float(str(cmd_ln[3]))
+            pair_rate = None
+            pair_info = None
+            if cmd_ln[0] == '/elive':               # принудительный запрос двух валют через API  ++++++++++++++++++++
+                pair_rate = get_currency_pair_rate(str(cmd_ln[1].upper()), str(cmd_ln[2].upper()))
+                pair_info = get_currency_pair_info(str(cmd_ln[1].upper()), str(cmd_ln[2].upper()))
+            if pair_rate is not None:
+                val1 = pair_rate['data'][str(cmd_ln[1].upper())]['code']
+                val2 = pair_rate['data'][str(cmd_ln[2].upper())]['code']
+            else:
+                val1 = curr_info['data'][str(cmd_ln[1].upper())]['code']
+                val2 = curr_info['data'][str(cmd_ln[2].upper())]['code']
+                
+            s_a = str(cmd_ln[3])    # исправление десятичного разделителя на "автомате" с продолжением работы
+            s_a = s_a.replace(',', '.')
+            amount = float(s_a)
             if amount < 0:
-                amount *= -1
+                amount *= -1        # исправление отрицательных чисел на "автомате" с продолжением работы
             elif amount == 0:
-                raise ValueError
-            if val1 == val2:
-                raise KeyError
-        except KeyError:
-            bot.send_message(message.chat.id, str('Код валюты введен с ошибкой!\n\n' + H_TEXT))
-            print('Код валюты введен с ошибкой =', cmd_ln)
+                raise ValueError    # исключение обмена нулевых сумм
+        except KeyError as e:
+            bot.send_message(message.chat.id, str('Код валюты введен с ошибкой!\n' + str(e.args[0]) + '\n' + H_TEXT))
+            print('Код валюты введен с ошибкой =', e.args[0])
             return
-        except ValueError:
-            bot.send_message(message.chat.id, str('Число введено с ошибкой!\n\n' + H_TEXT))
-            print('Число введено с ошибкой =', cmd_ln)
+        except ValueError as e:
+            err_str = 'Число введено с ошибкой!\n' + str(e) + '\n'
+            bot.send_message(message.chat.id, err_str + '\n' + H_TEXT)
+            print(err_str)
             return
         # наличие подтверждено
-        # ddg1 = curr_info['data'][val1]['decimal_digits']
-        rate1 = curr_list['data'][val1]['value']
-        
-        # ddg2 = curr_info['data'][val2]['decimal_digits']
-        rate2 = curr_list['data'][val2]['value']
-        
+        if pair_rate is not None:
+            rate1 = pair_rate['data'][val1]['value']
+            rate2 = pair_rate['data'][val2]['value']
+            if pair_info is not None:
+                form_str1 = str(pair_info['data'][val1]['decimal_digits'])
+                form_str2 = str(pair_info['data'][val2]['decimal_digits'])
+            else:
+                form_str1 = str(curr_info['data'][val1]['decimal_digits'])
+                form_str2 = str(curr_info['data'][val2]['decimal_digits'])
+        else:
+            rate1 = curr_list['data'][val1]['value']
+            rate2 = curr_list['data'][val2]['value']
+            form_str1 = str(curr_info['data'][val1]['decimal_digits'])
+            form_str2 = str(curr_info['data'][val2]['decimal_digits'])
         result = amount * rate2 / rate1
         
-        # print(val1, ddg1, fmt_rnd(rate1, val1), rate1)
-        # print(val2, ddg2, fmt_rnd(rate2, val2), rate2)
-        # print(val1, ddg1, fmt_rnd(result, val1), result)
-        
-        dec_v1 = '%.' + str(curr_info['data'][val1]['decimal_digits']) + 'f'
+        dec_v1 = '%.' + form_str1 + 'f'
         dec_v1 = dec_v1 % amount
-        dec_v2 = '%.' + str(curr_info['data'][val2]['decimal_digits']) + 'f'
+        dec_v2 = '%.' + form_str2 + 'f'
         dec_v2 = dec_v2 % result
         s = str(val1 + '=' + dec_v1 + ' <=> ' + val2 + '=' + dec_v2)
         print(date_time_stamp(), s)
@@ -220,7 +211,7 @@ def handle_exchange(message):
                                               str(cmd_ln) + '"?\n\n' + H_TEXT))
     
 
-# Обрабатывается загрузка списка валют из запроса по API к сервису в словарь с его сохранением
+# Обрабатывается загрузка списка валют из запроса по API к сервису в словарь с его сохранением +++++++++++++++++++++++
 @bot.message_handler(commands=['vload'])
 def handle_load_values(message):
     print(day_time_sender(message))
@@ -245,17 +236,18 @@ def handle_load_values_and_wright(message):
     return
 
 
-# Отрабатывается запись текущего словаря на диск
+# Отрабатывается информация об используемой версии базы валют
 @bot.message_handler(commands=['vinfo'])
 def handle_load_values_and_wright(message):
     print(day_time_sender(message))
-    print(date_time_stamp(), 'Дата и время загрузки базы валют.')
+    print(date_time_stamp(), 'Время "свежего" запроса к базе ',
+          datetime.fromtimestamp(ut_last_checked).strftime('%d-%m-%Y %H:%M:%S'))
     bot.send_message(message.chat.id, curr_version())
     return
 
 
 # Обрабатывается запрос списка валют
-@bot.message_handler(commands=['v', 'val', 'value'])
+@bot.message_handler(commands=['v', 'val', 'values'])
 def handle_values(message):
     print(day_time_sender(message))
     all_currency_list_out(message)  # вывод всех обслуживаемых валют и крипты
@@ -273,8 +265,7 @@ def other_messages(message):
 
 
 def reorder_dt(rs):
-    s = rs[8:10] + '-' + rs[5:7] + '-' + rs[0:4] + ' ' + rs[11:19]
-    return s
+    return rs[8:10] + '-' + rs[5:7] + '-' + rs[0:4] + ' ' + rs[11:19]
 
 
 def load_dict(fn):
@@ -329,6 +320,13 @@ def not_up_to_date():
     return (ts2-ts1) > UPD_INTERVAL_SEC
 
 
+def default_load():
+    global curr_list, curr_info
+    curr_list = tb_dict_currency.currencies_list
+    curr_info = tb_dict_currency.currencies_info
+    return
+
+
 def base_load():
     global curr_list, curr_info
     error_flag = 0
@@ -355,9 +353,9 @@ def base_load():
 def curr_version(info_str='Используется версия котировок от'):
     global last_update
     last_update = curr_list['meta']['last_updated_at']
-    s_out = date_time_stamp() + '    ' + info_str + ' ' + reorder_dt(last_update)
-    print(s_out)
-    return s_out
+    # s_out = date_time_stamp() + '    ' + info_str + ' ' + reorder_dt(last_update)
+    print(date_time_stamp() + '    ' + info_str + ' ' + reorder_dt(last_update))
+    return info_str + '\n' + reorder_dt(last_update)
 
 
 def ask_server():
@@ -392,12 +390,8 @@ main +++++++++++++++++++++++++++++++++++++++++++
 """
 print(date_time_stamp(), "Телеграмм бот по обмену валют запущен")
 print('Период ожидания обновления базы', UPD_INTERVAL_SEC / 3600, ' часов')
-# загрузка словарей валюты и правил округления (по умолчанию - старые данные)
-curr_list = tb_dict_currency.currencies_list
-curr_info = tb_dict_currency.currencies_info
+default_load()  # загрузка словарей валюты и правил округления (по умолчанию - старые данные)
 base_load()
 ask_server_if_needed()
-
 bot.infinity_polling()
-
-print(date_time_stamp(), '\n\nЧто-то пошло не так!')
+print(date_time_stamp(), '\n\nЧто-то пошло не так!')  # Сюда попадаем если бот вылетает
