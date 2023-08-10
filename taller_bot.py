@@ -7,8 +7,6 @@ Tallers_bot
 
 t.me/Tallers_bot
 """
-import time
-
 from tb_sec_set import TB_TOKEN
 from extensions import *
 import tb_dict_currency
