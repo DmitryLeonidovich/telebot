@@ -29,6 +29,7 @@ curr_info = {}          # объявление рабочего списка п�
 user_id = ''            # Идентификатор пользователя текущего сеанса
 awaiting_curr_cont = False  # Флаг ожидания ввода валюты и числа
 
+
 def date_time_stamp(date_message=None):
     if date_message is not None:
         return datetime.fromtimestamp(int(date_message)).strftime('%d-%m-%Y %H:%M:%S')
@@ -74,7 +75,7 @@ def get_all_currency(mode='list'):
     except TypeError as e:
         se = e
     except NoLinkToDB as e:
-        se = 'Обращение к API ['+ mode_type + '] ' + e.e_code
+        se = 'Обращение к API [' + mode_type + '] ' + e.e_code
     else:
         print(f'RAW response of {len(r.content)} bytes :\n', r.content)
         print('Number of currencies', len(_curr['data']))
@@ -222,8 +223,6 @@ def exchange_procedure(cmd_ln, message):
         print(date_time_stamp(), s)
         bot.send_message(message.chat.id, s)
     else:
-        # bot.send_message(message.chat.id, str('Что Вы имели ввиду набрав:\n"' +
-        #                                       str(cmd_ln) + '"?\n\n' + H_TEXT))
         bot.send_message(message.chat.id, str('Введите две валюты и сколько надо '
                                               'первой из них?'))
         awaiting_curr_cont = True
@@ -237,13 +236,15 @@ def handle_exchange(_message):
     exchange_procedure(_cmd_ln, _message)
     return
 
+
 # Обрабатывается загрузка списка валют из запроса по API к сервису в словарь с его сохранением +++++++++++++++++++++++
 @bot.message_handler(commands=['vload'])
 def handle_load_values(message):
     print(day_time_sender(message))
     print(date_time_stamp(), 'Запрос данных через API')
     if ask_server():
-        bot.send_message(message.chat.id, 'Успешно загружено ' + str(len(curr_list['data'])) + ' записей о доступных валютах')
+        bot.send_message(message.chat.id, 'Успешно загружено ' + str(len(curr_list['data']))
+                         + ' записей о доступных валютах')
     return
 
 
@@ -278,6 +279,7 @@ def currency_listing_procedure(message):
     all_currency_list_out(message)  # вывод всех обслуживаемых валют и крипты
     return
 
+
 # Обрабатывается запрос списка валют
 @bot.message_handler(commands=['v', 'values'])
 def handle_values(_message):
@@ -285,8 +287,7 @@ def handle_values(_message):
     return
 
 
-# не обслуженный входной поток
-@bot.message_handler(func=lambda message: True)
+@bot.message_handler(func=lambda message: True)  # не обслуженный входной поток
 def other_messages(message):
     global user_id, awaiting_curr_cont
     print(day_time_sender(message))
@@ -299,7 +300,7 @@ def other_messages(message):
         return
     if '/v' in ms or '/values' in ms:
         print(' ' * 20 + 'На исправление команды вывода списка валют')
-        currency_listing_procedure(message) #
+        currency_listing_procedure(message)
         return
     if '/start' in ms or '/help' in ms or ms == '?':
         print(' ' * 20 + 'На исправление команды вывода справки')
@@ -315,6 +316,7 @@ def other_messages(message):
         print(' ' * 20 + s)
         user_id = ''
         return
+    awaiting_curr_cont = True  # заглушка, позволяющая просто вводить валюты
     if awaiting_curr_cont:  # проверка на продолжение ввода валют
         print(' ' * 20 + 'На продолжение ввода валют')
         awaiting_curr_cont = False
@@ -328,12 +330,14 @@ def other_messages(message):
                     exchange_procedure(ms, message)
                     return
         print(' ' * 20 + 'Ошибка при вводе данных ' + str(ms))
-        bot.send_message(message.chat.id, 'Вы ошиблись при вводе данных. Повторите еще раз.')
+        bot.send_message(message.chat.id, 'Вы ошиблись при вводе данных. Попробуйте еще раз.')
+        return
     else:
-        bot.send_message(message.chat.id, str('Что Вы имели ввиду набрав:\n"' +
-                                              message.text +
-                                              '"?\nВ помощь:\n' +
-                                              H_TEXT))
+        pass
+    bot.send_message(message.chat.id, str('Что Вы имели ввиду набрав:\n"' + message.text +
+                                          '"?\nВ помощь:' + H_TEXT))
+    user_id = str(message.chat.id)
+    return
 
 
 def is_numeric(s):  # проверка строки на содержание в ней целого или дробного десятичного числа
