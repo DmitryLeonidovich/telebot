@@ -8,13 +8,9 @@ Tallers_bot
 t.me/Tallers_bot
 """
 from tb_sec_set import TB_TOKEN
-from tb_settings import *
-from datetime import datetime
-from extensions import NoLinkToDB
+from extensions import *
 import tb_dict_currency
 import telebot
-import requests
-import json
 import pickle
 import currencyapicom
 
@@ -28,13 +24,7 @@ curr_list = {}          # объявление рабочего списка в�
 curr_info = {}          # объявление рабочего списка правил округления и обозначения валют
 user_id = ''            # Идентификатор пользователя текущего сеанса
 awaiting_curr_cont = False  # Флаг ожидания ввода валюты и числа
-
-
-def date_time_stamp(date_message=None):
-    if date_message is not None:
-        return datetime.fromtimestamp(int(date_message)).strftime('%d-%m-%Y %H:%M:%S')
-    else:
-        return datetime.now().strftime('%d-%m-%Y %H:%M:%S')
+time_to_wait = UPD_INTERVAL_SEC  # время ожидания возможности обновления через API
 
 
 def day_time_sender(_message):
@@ -50,47 +40,6 @@ def day_time_sender(_message):
          ' команда =' + str(cmd_ln) + \
          ' время отправителя ' + date_time_stamp(_message.date)
     return _s
-
-
-def get_all_currency(mode='list'):
-    mode_type = 'котировки валюты'
-    r = None
-    _curr = None
-    se = ''
-    if mode == 'list':
-        mode = CR_REQUEST_CR_LATE
-    elif mode == 'info':
-        mode_type = 'инфо по валюте'
-        mode = CR_REQUEST_CR_LIST
-    try:
-        r = requests.get(mode)  # запрашиваем данные всех валют
-        _curr = json.loads(r.content)  # делаем из полученных байтов Python-объект для удобной работы
-        if r.status_code != 200:
-            _curr = None
-            raise NoLinkToDB(r.status_code)
-    except requests.exceptions.ConnectionError as e:
-        se = e
-    except requests.exceptions.ReadTimeout as e:
-        se = e
-    except TypeError as e:
-        se = e
-    except NoLinkToDB as e:
-        se = 'Обращение к API [' + mode_type + '] ' + e.e_code
-    else:
-        print(f'RAW response of {len(r.content)} bytes :\n', r.content)
-        print('Number of currencies', len(_curr['data']))
-    finally:
-        if se != '':
-            print(date_time_stamp(), '! ', se)
-    return _curr
-
-
-def get_currency_pair_rate(val1, val2):  # запрашиваем текущие курсы двух валют
-    return get_all_currency(CR_REQUEST_CR_LATE + '&currencies=' + val1 + "%2C" + val2)
-
-
-def get_currency_pair_info(val1, val2):  # запрашиваем текущие курсы двух валют
-    return get_all_currency(CR_REQUEST_CR_LIST + '&currencies=' + val1 + "%2C" + val2)
 
 
 def all_currency_list_out(_message):
@@ -149,18 +98,23 @@ def handle_start_help(message):
     bot.send_message(message.chat.id, 'Приветствуем Вас, ' + name + '.\nЗдесь можно узнать котировки\n'
                                                                     'обычных и цифровых валют.')
     bot.send_message(message.chat.id, H_TEXT)
-    user_id = str(message.chat.id)
+    user_id = str(message.chat.id)  # установка флага возможности просмотра подробной инструкции
 
 
+# Обрабатываются сообщения, содержащие команду '/mentor для проверяющего
+@bot.message_handler(commands=['mentor'])
+def handle_start_help(message):
+    global user_id
+    print(day_time_sender(message))
+    bot.send_message(message.chat.id, H_ADTN)
+    
+    
 def check_instance_list(to_test=''):
     if to_test == '':
         return to_test
-    # print('В мой обработчик прилетело ', type(to_test), to_test)
     if isinstance(to_test, list):
-        # print('В работу пошло ', to_test)
         return to_test
     else:
-        # print('Разделим по элементам')
         return to_test.split()
     
     
@@ -173,12 +127,14 @@ def exchange_procedure(cmd_ln, message):
             pair_rate = None
             pair_info = None
             if cmd_ln[0].lower() == '/elive':  # принудительный запрос двух валют через API  ++++++++++++++++++++
-                pair_rate = get_currency_pair_rate(str(cmd_ln[1].upper()), str(cmd_ln[2].upper()))
-                pair_info = get_currency_pair_info(str(cmd_ln[1].upper()), str(cmd_ln[2].upper()))
-            if pair_rate is not None:
+                pair_rate = API.get_currency_pair_rate(tb_db, str(cmd_ln[1].upper()), str(cmd_ln[2].upper()))
+                pair_info = API.get_currency_pair_info(tb_db, str(cmd_ln[1].upper()), str(cmd_ln[2].upper()))
+            else:
+                ask_server_if_needed()  # проверка на необходимость обновления локальной базы котировок валют
+            if pair_rate is not None:   # если считывали две валюты через API, нам сюда
                 val1 = pair_rate['data'][str(cmd_ln[1].upper())]['code']
                 val2 = pair_rate['data'][str(cmd_ln[2].upper())]['code']
-            else:
+            else:  # если считывания через API не было/не получилось, нам сюда, в локальную базу
                 val1 = curr_info['data'][str(cmd_ln[1].upper())]['code']
                 val2 = curr_info['data'][str(cmd_ln[2].upper())]['code']
             
@@ -186,7 +142,7 @@ def exchange_procedure(cmd_ln, message):
             
             amount = float(s_a)
             if amount < 0:
-                amount *= -1  # исправление отрицательных чисел на "автомате" с продолжением работы
+                amount *= -1  # исправление отрицательных чисел на "автомате"
             elif amount == 0:
                 raise ValueError  # исключение обмена нулевых сумм
         except KeyError as e:
@@ -198,34 +154,34 @@ def exchange_procedure(cmd_ln, message):
             bot.send_message(message.chat.id, err_str + '\n' + H_TEXT)
             print(err_str)
             return
-        # наличие подтверждено
-        if pair_rate is not None:
-            rate1 = pair_rate['data'][val1]['value']
+        # наличие подтверждено, блок TRY не напакостил
+        if pair_rate is not None:  # если запрашивали пару валют через API
+            rate1 = pair_rate['data'][val1]['value']    # тут и возьмем
             rate2 = pair_rate['data'][val2]['value']
-            if pair_info is not None:
+            if pair_info is not None:  # если при запросе еще и информацию по паре подтянули - тоже берем тут
                 form_str1 = str(pair_info['data'][val1]['decimal_digits'])
                 form_str2 = str(pair_info['data'][val2]['decimal_digits'])
-            else:
+            else:  # нет, информация не подтянулась, ошибка, то берем из локальной базы
                 form_str1 = str(curr_info['data'][val1]['decimal_digits'])
                 form_str2 = str(curr_info['data'][val2]['decimal_digits'])
-        else:
+        else:  # через API не запрашивали, берем курс и информацию из локальной базы
             rate1 = curr_list['data'][val1]['value']
             rate2 = curr_list['data'][val2]['value']
             form_str1 = str(curr_info['data'][val1]['decimal_digits'])
             form_str2 = str(curr_info['data'][val2]['decimal_digits'])
-        result = amount * rate2 / rate1
+        result = amount * rate2 / rate1    # тут делаем то, ради чего все задумано
         
-        dec_v1 = '%.' + form_str1 + 'f'
+        dec_v1 = '%.' + form_str1 + 'f'    # оформляем по приличнее
         dec_v1 = dec_v1 % amount
         dec_v2 = '%.' + form_str2 + 'f'
         dec_v2 = dec_v2 % result
         s = str(val1 + '=' + dec_v1 + ' <=> ' + val2 + '=' + dec_v2)
-        print(date_time_stamp(), s)
-        bot.send_message(message.chat.id, s)
-    else:
+        print(date_time_stamp(), s)               # выводим в консоль
+        bot.send_message(message.chat.id, s)      # выводим в бот заказчику
+    else:  # тут ясно, что заказчик не полностью ввел команду на обмен, предлагаем ему доделать по "быстрее"
         bot.send_message(message.chat.id, str('Введите две валюты и сколько надо '
                                               'первой из них?'))
-        awaiting_curr_cont = True
+        awaiting_curr_cont = True  # ставим флаг, открывающий эту "быстроту"
     return
 
 
@@ -250,7 +206,7 @@ def handle_load_values(message):
 
 # Отрабатывается запись текущего словаря на диск
 @bot.message_handler(commands=['vsave'])
-def handle_load_values_and_wright(message):
+def handle_save_values(message):
     print(day_time_sender(message))
     print(date_time_stamp(), 'Запись базы на диск.')
     ss2 = 'tlbdata_cl.pkl '
@@ -266,16 +222,19 @@ def handle_load_values_and_wright(message):
 
 # Отрабатывается информация об используемой версии базы валют
 @bot.message_handler(commands=['vinfo'])
-def handle_load_values_and_wright(message):
+def handle_check_values_age(message):
+    global time_to_wait
     print(day_time_sender(message))
+    s = 'Время обновления базы котировок ' + ttw(time_to_wait)
     print(date_time_stamp(), 'Время "свежего" запроса к базе ',
-          datetime.fromtimestamp(ut_last_checked).strftime('%d-%m-%Y %H:%M:%S'))
-    bot.send_message(message.chat.id, curr_version() + '\nИсточник данных:\nhttps://currencyapi.com\n')
+          datetime.fromtimestamp(ut_last_checked).strftime('%d-%m-%Y %H:%M:%S'), s)
+    bot.send_message(message.chat.id, curr_version() + '\n' + s + '\n\nИсточник данных:\nhttps://currencyapi.com\n')
     return
 
 
 def currency_listing_procedure(message):
     print(day_time_sender(message))
+    ask_server_if_needed()
     all_currency_list_out(message)  # вывод всех обслуживаемых валют и крипты
     return
 
@@ -289,11 +248,10 @@ def handle_values(_message):
 
 @bot.message_handler(func=lambda message: True)  # не обслуженный входной поток
 def other_messages(message):
-    global user_id, awaiting_curr_cont
+    global user_id, awaiting_curr_cont, time_to_wait
     print(day_time_sender(message))
-    ms = message.text
-    print(' ' * 20 + 'Undetectable message received:[' + ms + '] Message chat ID:', message.chat.id)
-    ms = ms.lower()
+    ms = message.text.lower()
+    print(' ' * 20 + 'Парсинг нераспознанной команды:[' + ms + '] Message chat ID:', message.chat.id)
     if '/exchange ' in ms or '/e ' in ms:
         print(' ' * 20 + 'На исправление команды определения курса')
         exchange_procedure(ms, message)
@@ -307,7 +265,7 @@ def other_messages(message):
         bot.send_message(message.chat.id, H_TEXT)
         user_id = str(message.chat.id)
         return
-    if ms.lower() == '/more':
+    if ms == '/more':
         if user_id == str(message.chat.id):
             s = 'Вывод подробной информации пользователю после просмотра им краткой справки'
             bot.send_message(message.chat.id, str(H_ADTN1))
@@ -316,12 +274,39 @@ def other_messages(message):
         print(' ' * 20 + s)
         user_id = ''
         return
+    ms = message.text.lower().split()
+    if ms[0] == 'time' and is_numeric(ms[1]):
+        print(' ' * 20 + 'На установку времени обновления')
+        time_to_wait = int(ms[1])
+        if time_to_wait < 0:
+            time_to_wait = -time_to_wait
+        s = 'Время обновления базы котировок ' + ttw(time_to_wait)
+        print(' ' * 20 + s)
+        bot.send_message(message.chat.id, s)
+        return
+    if len(ms) == 1 and ms[0] == 'api':  # проверка на вкл\выкл API
+        print(' ' * 20 + 'На API on/off')
+        tb_db.api_bypass = not tb_db.api_bypass
+        if tb_db.api_bypass:
+            s = 'API bypass ON'
+        else:
+            s = 'API bypass OFF'
+        print(' ' * 20 + s)
+        bot.send_message(message.chat.id, s)
+        return
+    if len(ms) == 1 and ms[0] == 'list':  # проверка на вывод в консоль словарей
+        print(' ' * 20 + 'Действующие словари')
+        print(curr_list)
+        print(curr_info)
+        print(tb_db.err_report)
+        print(' ' * 20 + '--------------------')
+        bot.send_message(message.chat.id, 'В консоль выведено')
+        return
     awaiting_curr_cont = True  # заглушка, позволяющая просто вводить валюты
+    ms = message.text.upper().split()
     if awaiting_curr_cont:  # проверка на продолжение ввода валют
         print(' ' * 20 + 'На продолжение ввода валют')
         awaiting_curr_cont = False
-        ms = message.text
-        ms = ms.upper().split()
         if len(ms) > 2:
             if ms[0] in curr_list['data'] and ms[1] in curr_info['data']:
                 ms[2] = str(ms[2]).replace(',', '.')  # исправление десятичного разделителя на "автомате"
@@ -332,12 +317,18 @@ def other_messages(message):
         print(' ' * 20 + 'Ошибка при вводе данных ' + str(ms))
         bot.send_message(message.chat.id, 'Вы ошиблись при вводе данных. Попробуйте еще раз.')
         return
-    else:
-        pass
     bot.send_message(message.chat.id, str('Что Вы имели ввиду набрав:\n"' + message.text +
                                           '"?\nВ помощь:' + H_TEXT))
     user_id = str(message.chat.id)
     return
+
+
+def ttw(tt):
+    if tt >= 3600:
+        st = str(f'{tt / 3600:.2f}') + ' ч.'
+    else:
+        st = str(int(tt)) + ' сек.'
+    return st
 
 
 def is_numeric(s):  # проверка строки на содержание в ней целого или дробного десятичного числа
@@ -401,7 +392,10 @@ def not_up_to_date():
         .timestamp()
     ts2 = datetime.now().timestamp()
     ut_last_checked = ts2
-    return (ts2-ts1) > UPD_INTERVAL_SEC
+    if (ts2-ts1) > time_to_wait:
+        tf2 = (ts2-ts1) / 3600
+        print(' ' * 23 + f'Превышено время ожидания на {tf2:.2f} ч ({int(ts2 - ts1):8} сек)')
+    return (ts2-ts1) > time_to_wait
 
 
 def default_load():
@@ -415,7 +409,7 @@ def base_load():
     global curr_list, curr_info
     error_flag = 0
     if not_up_to_date():
-        print('Устаревшие данные, загружаем из файлов.')
+        print(' ' * 23 + 'Устаревшие данные, загружаем из файлов.')
         d_s = load_dict('tlbdata_cl.pkl')
         if d_s is not None:
             tb_dict_currency.currencies_list = d_s
@@ -437,7 +431,6 @@ def base_load():
 def curr_version(info_str='Используется версия котировок от'):
     global last_update
     last_update = curr_list['meta']['last_updated_at']
-    # s_out = date_time_stamp() + '    ' + info_str + ' ' + reorder_dt(last_update)
     print(date_time_stamp() + '    ' + info_str + ' ' + reorder_dt(last_update))
     return info_str + '\n' + reorder_dt(last_update)
 
@@ -445,26 +438,26 @@ def curr_version(info_str='Используется версия котиров�
 def ask_server():
     global curr_list, curr_info
     load_ok = False
-    curr_dummy = get_all_currency('list')
+    curr_dummy = API.get_all_currency(tb_db, 'list')        # request to API
     if curr_dummy is not None:
         tb_dict_currency.currencies_list = curr_dummy
         curr_list = curr_dummy
         save_dict('tlbdata_cl.pkl')
         
-        curr_dummy = get_all_currency('info')
+        curr_dummy = API.get_all_currency(tb_db, 'info')    # request to API
         if curr_dummy is not None:
             tb_dict_currency.currencies_info = curr_dummy
             curr_info = curr_dummy
             save_dict('tlbdata_in.pkl')
             load_ok = True
-        
+    
     curr_version()
     return load_ok
 
 
 def ask_server_if_needed():
     if not_up_to_date():
-        print('Устаревшие данные, загружаем с сервера через API.')
+        print(' ' * 23 + 'Устаревшие данные, загружаем с сервера через API.')
         curr_version()
         ask_server()
     return
@@ -473,8 +466,9 @@ def ask_server_if_needed():
 """
 main +++++++++++++++++++++++++++++++++++++++++++
 """
+tb_db = API(curr_list, curr_info)
 print(date_time_stamp(), "Телеграмм бот по обмену валют запущен")
-print('Период ожидания обновления базы', UPD_INTERVAL_SEC / 3600, ' часов')
+print('Период ожидания обновления базы', ttw(time_to_wait))
 print(H_ADTN)
 default_load()  # загрузка словарей валюты и правил округления (по умолчанию - старые данные)
 base_load()
