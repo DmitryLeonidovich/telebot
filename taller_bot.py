@@ -7,6 +7,8 @@ Tallers_bot
 
 t.me/Tallers_bot
 """
+import time
+
 from tb_sec_set import TB_TOKEN
 from extensions import *
 import tb_dict_currency
@@ -296,8 +298,14 @@ def other_messages(message):
         return
     if len(ms) == 1 and ms[0] == 'list':  # проверка на вывод в консоль словарей
         print(' ' * 20 + 'Действующие словари')
-        print(curr_list)
-        print(curr_info)
+        print('Котировки к доллару США')
+        for keys, values in curr_list.items():
+            for keys1, values1 in values.items():
+                print(keys1, values1)
+        print('\nПравила написания, округления и визуализации')
+        for keys, values in curr_info.items():
+            for keys1, values1 in values.items():
+                print(keys1, values1)
         print(tb_db.err_report)
         print(' ' * 20 + '--------------------')
         bot.send_message(message.chat.id, 'В консоль выведено')

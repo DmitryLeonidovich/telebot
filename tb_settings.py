@@ -6,7 +6,7 @@ from tb_sec_set import CR_TOKEN
 
 CR_REQUEST_CR_LIST = 'https://api.currencyapi.com/v3/currencies?apikey=' + CR_TOKEN
 CR_REQUEST_CR_LATE = 'https://api.currencyapi.com/v3/latest?apikey=' + CR_TOKEN
-UPD_INTERVAL_SEC = 86400
+UPD_INTERVAL_SEC = 86400 * 1.2
 
 """
 https://api.currencyapi.com/v3/currencies?apikey=cur_live_uTjWnUO93FJA9mv5ptVsWD3H1XMm7o7zfLpNiod0&currencies=usd%2Crub
@@ -77,7 +77,7 @@ H_TEXT = '\nПример команды бота-менялы:\n\n' \
          'Подробнее, нажмите:\n/more\n'
 
 H_ADTN = 'Уголок Ментора.\nИспользуемый API сервис для бесплатного тарифного плана поставляет ' \
-         'данные котировок только раз в сутки.\n' \
+         'данные котировок только раз в сутки.\nВыбрать базовую валюту тоже нельзя. Пересчет идет через доллар США.\n' \
          'В месяц позволительно сделать только 300 запросов к сервису.\n' \
          'В связи с этим, при написании бота использована модель системы с локальной базой котировок.\n' \
          'При старте бот загружает "древнюю" версию котировок из тела программы, ' \
