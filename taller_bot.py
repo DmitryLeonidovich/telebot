@@ -7,7 +7,7 @@ Tallers_bot
 
 t.me/Tallers_bot
 """
-from tb_sec_set import TB_TOKEN
+from tb_sec_set import TB_TOKEN, LOGGER
 from extensions import *
 import tb_dict_currency
 import telebot
@@ -25,6 +25,14 @@ curr_info = {}          # объявление рабочего списка п�
 user_id = ''            # Идентификатор пользователя текущего сеанса
 awaiting_curr_cont = False  # Флаг ожидания ввода валюты и числа
 time_to_wait = UPD_INTERVAL_SEC  # время ожидания возможности обновления через API
+
+
+def to_logger(mess=None):
+    return
+    if mess is None or mess.chat.id == LOGGER:
+        return
+    bot.send_message(LOGGER, str('Прилетело:\n') + day_time_sender(mess))
+    return
 
 
 def day_time_sender(_message):
@@ -249,6 +257,7 @@ def handle_values(_message):
 @bot.message_handler(func=lambda message: True)  # не обслуженный входной поток
 def other_messages(message):
     global user_id, awaiting_curr_cont, time_to_wait
+    to_logger(message)
     print(day_time_sender(message))
     ms = message.text.lower()
     print(' ' * 20 + 'Парсинг нераспознанной команды:[' + ms + '] Message chat ID:', message.chat.id)
