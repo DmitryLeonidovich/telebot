@@ -9,7 +9,7 @@ CR_REQUEST_CR_LATE = 'https://api.currencyapi.com/v3/latest?apikey=' + CR_TOKEN
 UPD_INTERVAL_SEC = 86400 * 1.2
 
 """
-https://api.currencyapi.com/v3/currencies?apikey=cur_live_uTjWnUO93FJA9mv5ptVsWD3H1XMm7o7zfLpNiod0&currencies=usd%2Crub
+https://api.currencyapi.com/v3/currencies?apikey=cur_live_JA9mv5ptVsWD3H1XMm7o7zfLpNiod0&currencies=usd%2Crub
 {
   "message": "Validation error",
   "errors": {
@@ -20,7 +20,7 @@ https://api.currencyapi.com/v3/currencies?apikey=cur_live_uTjWnUO93FJA9mv5ptVsWD
   "info": "For more information, see documentation: https://currencyapi.com/docs/status-codes#_422"
 }
 
-https://api.currencyapi.com/v3/currencies?apikey=cur_live_uTjWnUO93FJA9mv5ptVsWD3H1XMm7o7zfLpNiod0&currencies=USD%2CRUB
+https://api.currencyapi.com/v3/currencies?apikey=cur_live_JA9mv5ptVsWD3H1XMm7o7zfLpNiod0&currencies=USD%2CRUB
 {
   "data": {
     "RUB": {
@@ -44,8 +44,8 @@ https://api.currencyapi.com/v3/currencies?apikey=cur_live_uTjWnUO93FJA9mv5ptVsWD
   }
 }
 
-https://api.currencyapi.com/v3/latest?apikey=cur_live_uTjWnUO93FJA9mv5ptVsWD3H1XMm7o7zfLpNiod0&currencies=USD%2CRUB
-https://api.currencyapi.com/v3/latest?apikey=cur_live_uTjWnUO93FJA9mv5ptVsWD3H1XMm7o7zfLpNiod0=USD%2CRUB
+https://api.currencyapi.com/v3/latest?apikey=cur_live_JA9mv5ptVsWD3H1XMm7o7zfLpNiod0&currencies=USD%2CRUB
+https://api.currencyapi.com/v3/latest?apikey=cur_live_JA9mv5ptVsWD3H1XMm7o7zfLpNiod0=USD%2CRUB
 {
   "meta": {
     "last_updated_at": "2023-08-02T23:59:59Z"
