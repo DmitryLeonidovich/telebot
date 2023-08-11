@@ -47,7 +47,9 @@ class API:
         self._cu_list = _curr_rate
         self._cu_info = _curr_info
     
+    @staticmethod   # Tо, что в задании называется "get_price()", а два параметра сидят в "mode"."amount" тут не нужен
     def get_all_currency(self, mode='list'):
+        
         mode_type = 'котировки валюты'
         r = None
         _curr = None
